@@ -16,7 +16,7 @@ export class InicioController {
     const en30 = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
     const anio = hoy.slice(0, 4);
 
-    const [proyectos, facturasMes, pendientes, facturadoAnio, empleados, nominasMes, empresa, clientes, proyectosConPrecio, emitidas, hitos, servicios, presupuestos] = await Promise.all([
+    const [proyectos, facturasMes, pendientes, facturadoAnio, empleados, nominasMes, empresa, clientes, proyectosConPrecio, emitidas, hitos, servicios, presupuestos, presupuestosAnio] = await Promise.all([
       this.db.from('proyectos').select('id, modalidad').eq('estado', 'activo'),
       this.db.from('facturas').select('proyecto_id').eq('periodo', periodo).in('estado', ['emitida', 'cobrada']),
       this.db
@@ -29,7 +29,7 @@ export class InicioController {
       this.db.from('empleados').select('id').eq('activo', true),
       this.db.from('nominas').select('id', { count: 'exact', head: true }).eq('periodo', periodo),
       // Para la guía de primeros pasos
-      this.db.from('empresa').select('cif, iban').eq('id', 1).single(),
+      this.db.from('empresa').select('cif, iban, accion_principal').eq('id', 1).single(),
       this.db.from('clientes').select('id', { count: 'exact', head: true }),
       this.db.from('proyectos').select('id', { count: 'exact', head: true }).or('precio_hora.gt.0,presupuesto.gt.0'),
       this.db.from('facturas').select('id', { count: 'exact', head: true }).in('estado', ['emitida', 'cobrada']),
@@ -42,8 +42,14 @@ export class InicioController {
         .order('completado_en'),
       this.db.from('servicios').select('id, nombre, tipo, precio, coste, periodicidad, proxima_renovacion, cliente:clientes(nombre)').eq('estado', 'activo').order('proxima_renovacion'),
       this.db.from('presupuestos').select('id, numero, titulo, total, fecha, valido_hasta, cliente_texto, cliente:clientes(nombre)').eq('estado', 'enviado').order('fecha'),
+      // Para las cifras de presupuestos del inicio
+      this.db.from('presupuestos').select('estado, base, fecha, respondido_en').gte('fecha', `${anio}-01-01`),
     ]);
-    const datosEmpresa = ok(empresa) as { cif: string | null; iban: string | null };
+    const datosEmpresa = ok(empresa) as { cif: string | null; iban: string | null; accion_principal: string };
+    const presAnio = ok(presupuestosAnio) as any[];
+    const sumaBase = (l: any[]) => l.reduce((t, p) => t + Number(p.base), 0);
+    const aceptadosAnio = presAnio.filter((p) => p.estado === 'aceptado');
+    const respondidos = presAnio.filter((p) => p.estado === 'aceptado' || p.estado === 'rechazado');
 
     const activos = ok(proyectos) as any[];
     const porHoras = activos.filter((p) => p.modalidad === 'horas');
@@ -78,6 +84,15 @@ export class InicioController {
       recurrente_mes: servs.reduce((t, x) => t + importeMensual(Number(x.precio), x.periodicidad), 0),
       margen_recurrente_mes: servs.reduce((t, x) => t + importeMensual(Number(x.precio) - Number(x.coste), x.periodicidad), 0),
       servicios_activos: servs.length,
+      accion_principal: datosEmpresa.accion_principal,
+      presupuestos_resumen: {
+        borradores: presAnio.filter((p) => p.estado === 'borrador').length,
+        hechos_mes: presAnio.filter((p) => p.fecha >= periodo).length,
+        aceptados_anio: aceptadosAnio.length,
+        aceptado_anio: sumaBase(aceptadosAnio),
+        // Qué parte de los presupuestos que ya tienen respuesta se han aceptado
+        tasa_aceptacion: respondidos.length ? Math.round((aceptadosAnio.length / respondidos.length) * 100) : null,
+      },
       presupuestos_pendientes: (ok(presupuestos) as any[]).map((p) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) })),
       por_cobrar: porCobrar.reduce((s, f) => s + Number(f.total), 0),
       vencidas: porCobrar.filter((f) => f.vencimiento && f.vencimiento < hoy),

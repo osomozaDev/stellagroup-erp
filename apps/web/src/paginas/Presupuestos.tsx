@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
@@ -33,6 +33,8 @@ export default function Presupuestos() {
   const [estado, setEstado] = useState<'' | EstadoPresupuesto>('');
   const [nuevo, setNuevoEstado] = useState(params.get('nuevo') === '1');
   const setNuevo = (v: boolean) => { setNuevoEstado(v); if (!v && params.has('nuevo')) setParams({}, { replace: true }); };
+  // El botón principal del menú lleva aquí con ?nuevo=1 aunque ya estés en Presupuestos
+  useEffect(() => { if (params.get('nuevo') === '1') setNuevoEstado(true); }, [params]);
   const { data: lista, isLoading } = useQuery({
     queryKey: ['presupuestos', q, estado],
     queryFn: () => api<any[]>(`/presupuestos?q=${encodeURIComponent(q)}${estado ? `&estado=${estado}` : ''}`),

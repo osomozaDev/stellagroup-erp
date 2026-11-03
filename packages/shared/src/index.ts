@@ -628,6 +628,7 @@ export const empresaSchema = z.object({
   pie_factura: texto,
   validez_presupuesto_dias: z.coerce.number().int().min(1).max(365).default(30),
   condiciones_presupuesto: texto,
+  accion_principal: z.enum(['presupuesto', 'facturar_mes']).default('presupuesto'),
 });
 export type EmpresaInput = z.infer<typeof empresaSchema>;
 

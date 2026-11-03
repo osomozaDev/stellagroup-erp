@@ -3,7 +3,7 @@ import { ImagePlus, Trash2 } from 'lucide-react';
 import { ejemploNumero } from '@stella/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { AreaTexto, Boton, Campo, Cargando, Entrada, Selector, Tarjeta, useAviso, useFormulario } from '../components/ui';
+import { AreaTexto, Boton, Campo, Cargando, Entrada, Selector, Tarjeta, cx, useAviso, useFormulario } from '../components/ui';
 import AvisosTelegram from '../components/AvisosTelegram';
 import { usePuede } from '../lib/permisos';
 
@@ -30,7 +30,7 @@ const vacio = {
   nombre: '', cif: '', direccion: '', cp: '', ciudad: '', provincia: '', email: '', telefono: '', iban: '',
   serie_factura: 'F', numeracion: 'anual' as 'anual' | 'continua', proximo_numero: 1, forma_pago: 'Transferencia bancaria',
   color: '#1f6feb', logo: '' as string | null, dias_vencimiento: 30, iva_pct: 21, ss_trabajador_pct: 6.5, ss_empresa_pct: 31.5, pie_factura: '',
-  validez_presupuesto_dias: 30, condiciones_presupuesto: '',
+  validez_presupuesto_dias: 30, condiciones_presupuesto: '', accion_principal: 'presupuesto' as 'presupuesto' | 'facturar_mes',
 };
 
 export default function Ajustes() {
@@ -134,6 +134,28 @@ export default function Ajustes() {
             <Campo etiqueta="Días para pagar"><Entrada type="number" {...campo('dias_vencimiento')} /></Campo>
             <Campo etiqueta="IVA habitual %"><Entrada type="number" {...campo('iva_pct')} /></Campo>
             <Campo etiqueta="Texto al pie de la factura" className="sm:col-span-2"><AreaTexto {...campo('pie_factura')} /></Campo>
+          </div>
+        </Tarjeta>
+
+        <Tarjeta titulo="Cómo trabajáis">
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Lo más importante de vuestro día a día: es el botón grande del menú, el del centro en el móvil y lo primero que sale en el inicio.</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              {([
+                ['presupuesto', 'Crear presupuestos', 'Vendéis por proyecto: lo principal es preparar y enviar presupuestos.'],
+                ['facturar_mes', 'Facturar el mes', 'Facturáis cada mes por horas: lo principal es sacar las facturas del mes.'],
+              ] as const).map(([clave, titulo, texto]) => (
+                <button
+                  key={clave}
+                  type="button"
+                  onClick={() => poner('accion_principal', clave)}
+                  className={cx('rounded-xl border p-4 text-left transition', valores.accion_principal === clave ? 'border-marca-500 bg-marca-50 ring-1 ring-marca-500' : 'border-slate-200 hover:bg-slate-50')}
+                >
+                  <p className="font-semibold">{titulo}</p>
+                  <p className="mt-1 text-sm text-slate-500">{texto}</p>
+                </button>
+              ))}
+            </div>
           </div>
         </Tarjeta>
 

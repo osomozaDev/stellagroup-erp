@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Briefcase, CalendarPlus, ExternalLink, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
+  Briefcase, CalendarPlus, ExternalLink, FilePlus2, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -69,18 +70,25 @@ export default function Estructura({ email }: { email: string }) {
   const puede = usePuede();
   const permitido = (a: string) => puede(PERMISO_DE_PAGINA.find(([p]) => p === a)?.[1] ?? 'usuarios');
   const visibles = menu.filter((m) => permitido(m.a));
-  const facturar = puede('facturas');
+  // El botón grande del menú y el central del móvil: lo que la empresa marca como principal en «Mi empresa»
+  const { data: empresa } = useQuery({ queryKey: ['empresa'], queryFn: () => api<any>('/empresa') });
+  const principal =
+    empresa?.accion_principal === 'facturar_mes'
+      ? { a: '/facturar-mes', texto: 'Facturar el mes', corto: 'Facturar', icono: CalendarPlus, permiso: 'facturas' }
+      : { a: '/presupuestos?nuevo=1', texto: 'Nuevo presupuesto', corto: 'Presupuesto', icono: FilePlus2, permiso: 'presupuestos' };
+  const conPrincipal = !!empresa && puede(principal.permiso);
+  const IconoPrincipal = principal.icono;
 
   const lateral = (cerrar?: () => void) => (
     <>
       <div className="h-16 short:h-12 shrink-0 flex items-center"><Logo /></div>
-      {facturar && <div className="px-3 mb-4 short:mb-2 shrink-0">
+      {conPrincipal && <div className="px-3 mb-4 short:mb-2 shrink-0">
         <button
-          onClick={() => { cerrar?.(); navegar('/facturar-mes'); }}
+          onClick={() => { cerrar?.(); navegar(principal.a); }}
           className="flex items-center gap-3 rounded-2xl bg-white shadow-md hover:shadow-lg px-5 h-14 short:h-11 text-[15px] font-semibold text-slate-800 transition border border-slate-100"
         >
-          <CalendarPlus className="size-5 text-marca-600" />
-          Facturar el mes
+          <IconoPrincipal className="size-5 text-marca-600" />
+          {principal.texto}
         </button>
       </div>}
       <nav className="flex-1 min-h-0 overflow-y-auto space-y-0.5 pr-3">
@@ -144,12 +152,12 @@ export default function Estructura({ email }: { email: string }) {
         {!enDetalle && (
           <nav className="md:hidden relative z-20 grid grid-cols-5 bg-white border-t border-slate-200 pb-seguro no-imprimir">
             {visibles.slice(0, 2).map((m) => <Pestana key={m.a} {...m} />)}
-            {facturar ? (
-              <button onClick={() => navegar('/facturar-mes')} className="relative flex flex-col items-center justify-center -mt-5" aria-label="Facturar el mes">
+            {conPrincipal ? (
+              <button onClick={() => navegar(principal.a)} className="relative flex flex-col items-center justify-center -mt-5" aria-label={principal.texto}>
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-marca-600 text-white shadow-lg shadow-marca-600/30">
-                  <CalendarPlus className="size-6" />
+                  <IconoPrincipal className="size-6" />
                 </span>
-                <span className="text-[11px] font-medium text-marca-700 mt-0.5">Facturar</span>
+                <span className="text-[11px] font-medium text-marca-700 mt-0.5">{principal.corto}</span>
               </button>
             ) : visibles[4] && <Pestana {...visibles[4]} />}
             {visibles.slice(2, 4).map((m) => <Pestana key={m.a} {...m} />)}

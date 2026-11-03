@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarPlus, CheckCircle2, Clock, FileSignature, FolderKanban, Receipt, RefreshCw, Target, Wallet } from 'lucide-react';
+import { ArrowRight, CalendarPlus, CheckCircle2, Clock, FilePlus2, FileSignature, FolderKanban, Receipt, RefreshCw, Target, Wallet } from 'lucide-react';
 import { nombreTipoServicio } from '@stella/shared';
 import { api } from '../lib/api';
 import { euros, fecha, MESES, nombreMes } from '../lib/formato';
@@ -30,37 +30,14 @@ export default function Inicio() {
 
         {r.pasos && !Object.values(r.pasos).every(Boolean) && <PrimerosPasos pasos={r.pasos} />}
 
-        {/* Lo que toca facturar: hitos entregados y proyectos por horas del mes */}
-        {r.hitos_por_facturar.length > 0 || r.proyectos_sin_facturar > 0 ? (
-          <div className="rounded-2xl bg-gradient-to-br from-marca-600 to-marca-700 text-white p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4">
-            <div className="flex-1">
-              <p className="text-marca-100 text-sm font-medium">Pendiente de facturar</p>
-              <p className="text-xl md:text-2xl font-semibold mt-1">
-                {[
-                  r.hitos_por_facturar.length && (r.hitos_por_facturar.length === 1 ? '1 hito entregado' : `${r.hitos_por_facturar.length} hitos entregados`),
-                  r.proyectos_sin_facturar && (r.proyectos_sin_facturar === 1 ? '1 proyecto por horas' : `${r.proyectos_sin_facturar} proyectos por horas`),
-                ].filter(Boolean).join(' y ')}
-              </p>
-              <p className="text-marca-100 text-sm mt-1">
-                {r.hitos_por_facturar.length > 0
-                  ? `${euros(r.hitos_por_facturar.reduce((t: number, h: any) => t + Number(h.importe), 0))} en hitos esperando su factura.`
-                  : `Revisa las horas de ${nombreMes(r.periodo)} y crea todas las facturas de una vez.`}
-              </p>
-            </div>
-            <Boton
-              variante="secundario"
-              className="h-12 px-6 border-0"
-              icono={<CalendarPlus className="size-5 text-marca-600" />}
-              onClick={() => navegar(r.hitos_por_facturar.length ? `/proyectos/${r.hitos_por_facturar[0].proyecto.id}` : '/facturar-mes')}
-            >
-              {r.hitos_por_facturar.length ? 'Facturar hitos' : 'Facturar el mes'}
-            </Boton>
-          </div>
+        {/* Lo principal según «Mi empresa → Cómo trabajáis»: presupuestos o facturar el mes */}
+        {r.accion_principal === 'facturar_mes' ? (
+          <Facturacion r={r} destacada />
         ) : (
-          <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-5 flex items-center gap-3">
-            <CheckCircle2 className="size-6 text-emerald-600 shrink-0" />
-            <p className="text-emerald-800 font-medium">¡Todo facturado! No hay hitos entregados ni horas de {nombreMes(r.periodo)} sin factura.</p>
-          </div>
+          <>
+            {puede('presupuestos') && <PresupuestosDestacado r={r} />}
+            {puede('facturas') && <Facturacion r={r} />}
+          </>
         )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -297,3 +274,89 @@ function PrimerosPasos({ pasos }: { pasos: Record<string, boolean> }) {
   );
 }
 
+/** Lo que toca facturar: hitos entregados y proyectos por horas del mes. Destacada = lo principal de la empresa. */
+function Facturacion({ r, destacada }: { r: any; destacada?: boolean }) {
+  const navegar = useNavigate();
+  const pendientes = r.hitos_por_facturar.length > 0 || r.proyectos_sin_facturar > 0;
+  const titulo = [
+    r.hitos_por_facturar.length && (r.hitos_por_facturar.length === 1 ? '1 hito entregado' : `${r.hitos_por_facturar.length} hitos entregados`),
+    r.proyectos_sin_facturar && (r.proyectos_sin_facturar === 1 ? '1 proyecto por horas' : `${r.proyectos_sin_facturar} proyectos por horas`),
+  ].filter(Boolean).join(' y ');
+  const ir = () => navegar(r.hitos_por_facturar.length ? `/proyectos/${r.hitos_por_facturar[0].proyecto.id}` : '/facturar-mes');
+  const boton = r.hitos_por_facturar.length ? 'Facturar hitos' : 'Facturar el mes';
+
+  if (!destacada) {
+    // Secundaria: solo sale si hay algo pendiente, como un aviso
+    if (!pendientes) return null;
+    return (
+      <button onClick={ir} className="flex w-full items-center gap-3 rounded-2xl bg-white border border-slate-200/70 p-4 text-left hover:bg-slate-50">
+        <CalendarPlus className="size-5 text-marca-600 shrink-0" />
+        <span className="flex-1 text-sm"><b>Pendiente de facturar:</b> {titulo}</span>
+        <span className="text-sm font-medium text-marca-600">{boton}</span>
+        <ArrowRight className="size-4 text-slate-400" />
+      </button>
+    );
+  }
+  return pendientes ? (
+    <div className="rounded-2xl bg-gradient-to-br from-marca-600 to-marca-700 text-white p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4">
+      <div className="flex-1">
+        <p className="text-marca-100 text-sm font-medium">Pendiente de facturar</p>
+        <p className="text-xl md:text-2xl font-semibold mt-1">{titulo}</p>
+        <p className="text-marca-100 text-sm mt-1">
+          {r.hitos_por_facturar.length > 0
+            ? `${euros(r.hitos_por_facturar.reduce((t: number, h: any) => t + Number(h.importe), 0))} en hitos esperando su factura.`
+            : `Revisa las horas de ${nombreMes(r.periodo)} y crea todas las facturas de una vez.`}
+        </p>
+      </div>
+      <Boton variante="secundario" className="h-12 px-6 border-0" icono={<CalendarPlus className="size-5 text-marca-600" />} onClick={ir}>{boton}</Boton>
+    </div>
+  ) : (
+    <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-5 flex items-center gap-3">
+      <CheckCircle2 className="size-6 text-emerald-600 shrink-0" />
+      <p className="text-emerald-800 font-medium">¡Todo facturado! No hay hitos entregados ni horas de {nombreMes(r.periodo)} sin factura.</p>
+    </div>
+  );
+}
+
+/** Lo principal para quien vende por proyecto: presupuestos en marcha y botón para hacer uno nuevo */
+function PresupuestosDestacado({ r }: { r: any }) {
+  const navegar = useNavigate();
+  const p = r.presupuestos_resumen;
+  const esperando = r.presupuestos_pendientes;
+  const importeEsperando = esperando.reduce((t: number, x: any) => t + Number(x.total), 0);
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-marca-600 to-marca-700 text-white p-5 md:p-6 space-y-4">
+      <div className="flex flex-col md:flex-row md:items-center gap-4">
+        <div className="flex-1">
+          <p className="text-marca-100 text-sm font-medium">Presupuestos</p>
+          <p className="text-xl md:text-2xl font-semibold mt-1">
+            {esperando.length
+              ? `${esperando.length === 1 ? '1 presupuesto espera' : `${esperando.length} presupuestos esperan`} respuesta · ${euros(importeEsperando)}`
+              : 'Ningún presupuesto esperando respuesta'}
+          </p>
+          <p className="text-marca-100 text-sm mt-1">
+            {p.borradores ? `${p.borradores === 1 ? 'Tienes 1 borrador' : `Tienes ${p.borradores} borradores`} sin enviar. ` : ''}
+            {`${p.hechos_mes === 1 ? '1 hecho' : `${p.hechos_mes} hechos`} en ${nombreMes(r.periodo).split(' ')[0]}.`}
+          </p>
+        </div>
+        <Boton variante="secundario" className="h-12 px-6 border-0" icono={<FilePlus2 className="size-5 text-marca-600" />} onClick={() => navegar('/presupuestos?nuevo=1')}>
+          Nuevo presupuesto
+        </Boton>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-sm">
+        <Link to="/presupuestos" className="rounded-xl bg-white/10 px-3 py-2 hover:bg-white/15">
+          <p className="text-marca-100 text-xs">Aceptados este año</p>
+          <p className="font-semibold">{p.aceptados_anio} · {euros(p.aceptado_anio)}</p>
+        </Link>
+        <Link to="/presupuestos" className="rounded-xl bg-white/10 px-3 py-2 hover:bg-white/15">
+          <p className="text-marca-100 text-xs">Se aceptan</p>
+          <p className="font-semibold">{p.tasa_aceptacion == null ? '—' : `${p.tasa_aceptacion} %`}</p>
+        </Link>
+        <Link to="/catalogo" className="rounded-xl bg-white/10 px-3 py-2 hover:bg-white/15">
+          <p className="text-marca-100 text-xs">Catálogo</p>
+          <p className="font-semibold">Productos y servicios</p>
+        </Link>
+      </div>
+    </div>
+  );
+}
