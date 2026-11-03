@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "stella-api", "runtimeExecutable": "pnpm", "runtimeArgs": ["--filter", "@stella/api", "dev"], "port": 3101 },
+    { "name": "stella-web", "runtimeExecutable": "pnpm", "runtimeArgs": ["--filter", "@stella/web", "dev"], "port": 5183 }
+  ]
+}

@@ -1,0 +1,12 @@
+# Nunca subir claves ni restos locales a Vercel
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+**/dist
+**/dist-vercel
+.claude
+supabase/.temp
+supabase/.branches
+docs

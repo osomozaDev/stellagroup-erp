@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+
+/* Pantallas bajas (portátiles de 650–760 px de alto): menú lateral más compacto */
+@custom-variant short (@media (max-height: 760px));
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Colores de stellagroup.es: el azul de marca (oklch 55% .22 250), su degradado a cian y el negro del monograma */
+  --color-marca-50: #ebf7ff;
+  --color-marca-100: #d2ebff;
+  --color-marca-200: #add9ff;
+  --color-marca-500: #0088f2;
+  --color-marca-600: #006fea;
+  --color-marca-700: #0059bf;
+  --color-marca-900: #002d62;
+  --color-cian: #00c3e5;
+  --color-tinta: #0b1220;
+  --color-fondo: #f5f7fa;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-fondo text-slate-800 antialiased; -webkit-tap-highlight-color: transparent; }
+
+/* Inputs a 16px en móvil para que iOS no haga zoom */
+input, select, textarea { font-size: 16px; }
+@media (min-width: 768px) { input, select, textarea { font-size: 14px; } }
+
+.pb-seguro { padding-bottom: env(safe-area-inset-bottom); }
+
+@media print {
+  body { background: #fff; }
+  body * { visibility: hidden; }
+  .imprimible, .imprimible * { visibility: visible; }
+  .imprimible { position: absolute; left: 0; top: 0; width: 100%; border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+  .no-imprimir { display: none !important; }
+  html, body, #root, main, .h-full, .overflow-y-auto, .overflow-hidden { height: auto !important; overflow: visible !important; }
+  @page { margin: 14mm; }
+}

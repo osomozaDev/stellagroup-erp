@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+supabase/.branches
+supabase/.temp
+*.tsbuildinfo
+.vercel
+.env*
+dist-vercel
+!.env.example
