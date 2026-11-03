@@ -251,7 +251,14 @@ export type PresupuestoInput = z.infer<typeof presupuestoSchema>;
 export function clienteDeTexto(texto?: string | null) {
   const lineas = (texto ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lineas.length) return null;
-  return { id: null, nombre: lineas[0], lineas: lineas.slice(1), email: lineas.find((l) => /^\S+@\S+\.\S+$/.test(l)) ?? null, contacto: null };
+  // CIF, correo y teléfono se reconocen; el resto se toma como dirección
+  const limpia = (l: string) => l.replace(/^(cif|nif|dni|email|e-mail|correo|tel[eé]fono|tel|m[oó]vil)\.?\s*:?\s*/i, '').trim();
+  const resto = lineas.slice(1);
+  const cif = resto.map(limpia).find((l) => /^([A-Z]\d{7}[A-Z0-9]|\d{8}[A-Z]|[XYZ]\d{7}[A-Z])$/i.test(l.replace(/[\s.-]/g, '')));
+  const email = resto.map(limpia).find((l) => /^\S+@\S+\.\S+$/.test(l));
+  const telefono = resto.map(limpia).find((l) => /^\+?[\d\s]{9,15}$/.test(l));
+  const direccion = resto.filter((l) => ![cif, email, telefono].includes(limpia(l))).join(', ') || null;
+  return { id: null, nombre: lineas[0], lineas: resto, cif: cif ?? null, email: email ?? null, telefono: telefono ?? null, direccion, contacto: null };
 }
 
 /** Al aceptar un presupuesto se crea el proyecto y cada línea pasa a ser un hito */

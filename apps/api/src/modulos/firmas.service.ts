@@ -61,7 +61,7 @@ export class FirmasService {
       const p = ok(
         await this.db
           .from('presupuestos')
-          .select('*, cliente:clientes(nombre, cif, direccion, cp, ciudad, provincia, email, contacto), lineas:presupuesto_lineas(concepto, cantidad, unidad, precio, importe, orden)')
+          .select('*, cliente:clientes(nombre, cif, direccion, cp, ciudad, provincia, email, contacto, telefono), lineas:presupuesto_lineas(concepto, cantidad, unidad, precio, importe, orden)')
           .eq('id', id)
           .order('orden', { referencedTable: 'presupuesto_lineas' })
           .single(),

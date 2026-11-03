@@ -1,6 +1,7 @@
 import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer';
 import { bloquesContrato, ParteTexto } from '@stella/shared';
 import { aclarar, euros, fecha, fechaHora, nombreMes, num } from './formato';
+import { PresupuestoPdf } from './presupuesto';
 
 /**
  * Plantilla del PDF de las facturas y los presupuestos. La usan la web (descargar,
@@ -13,6 +14,15 @@ export function registrarFuentes(base: string) {
   Font.register({
     family: 'Inter',
     fonts: [400, 500, 600, 700].map((fontWeight) => ({ src: `${base}/inter-${fontWeight}.woff`, fontWeight })),
+  });
+  // Títulos con serifa del presupuesto (licencia SIL OFL, ver fonts/fraunces-LICENSE.txt)
+  Font.register({
+    family: 'Fraunces',
+    fonts: [
+      { src: `${base}/fraunces-500.woff`, fontWeight: 500 },
+      { src: `${base}/fraunces-600.woff`, fontWeight: 600 },
+      { src: `${base}/fraunces-500-italic.woff`, fontWeight: 500, fontStyle: 'italic' },
+    ],
   });
   // Sin esto react-pdf parte palabras con guiones y deja huecos raros dentro de ellas
   Font.registerHyphenationCallback((palabra) => [palabra]);
@@ -198,6 +208,7 @@ export const titulo = (f: any) => (f.tipo_documento === 'contrato' ? `Contrato $
 
 /** Solo en el servidor: el PDF como Buffer (facturas, presupuestos y contratos) */
 export function pdfFacturaBuffer(f: any) {
+  if (f.tipo_documento === 'presupuesto') return renderToBuffer(<PresupuestoPdf p={f} Certificado={PaginaCertificado} />);
   return renderToBuffer(f.tipo_documento === 'contrato' ? <ContratoPdf c={f} /> : <FacturaPdf f={f} />);
 }
 
