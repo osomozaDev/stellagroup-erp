@@ -51,7 +51,7 @@ export class ContratosController {
       this.db.from('empresa').select('*').eq('id', 1).single().then((r) => ok(r)),
       this.db.from('clientes').select('*').eq('id', clienteId).single().then((r) => ok(r)),
       proyectoId ? this.db.from('proyectos').select('*').eq('id', proyectoId).single().then((r) => ok(r)) : null,
-      presupuestoId ? this.db.from('presupuestos').select('*').eq('id', presupuestoId).single().then((r) => ok(r) as any) : null,
+      presupuestoId ? this.db.from('presupuestos').select('*, lineas:presupuesto_lineas(*)').eq('id', presupuestoId).single().then((r) => ok(r) as any) : null,
       this.db.from('servicios').select('nombre, detalle, precio, periodicidad').eq('cliente_id', clienteId).eq('estado', 'activo').order('nombre').then((r) => ok(r) as any[]),
     ]);
     // Sin proyecto elegido, el del presupuesto

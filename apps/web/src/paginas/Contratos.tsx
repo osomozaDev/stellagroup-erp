@@ -238,7 +238,7 @@ function FormularioContrato({ contrato, inicial, onCerrar }: { contrato?: any; i
 
   // Un contrato nuevo empieza con la plantilla de desarrollo (o la primera) elegida
   useEffect(() => {
-    if (!contrato && !v.plantilla_id && activas.length) poner('plantilla_id', (activas.find((p) => /desarrollo/i.test(p.nombre)) ?? activas[0]).id);
+    if (!contrato && !v.plantilla_id && activas.length) poner('plantilla_id', (activas.find((p) => /servicios web/i.test(p.nombre)) ?? activas.find((p) => /desarrollo/i.test(p.nombre)) ?? activas[0]).id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plantillas]);
 

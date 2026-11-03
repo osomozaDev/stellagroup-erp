@@ -340,7 +340,33 @@ export const VARIABLES_CONTRATO = [
   ['proyecto.inicio', 'Fecha de inicio'], ['proyecto.entrega', 'Entrega prevista'], ['presupuesto.numero', 'Nº de presupuesto'],
   ['presupuesto.base', 'Importe sin IVA'], ['presupuesto.total', 'Importe con IVA'], ['servicios.lista', 'Servicios recurrentes del cliente'],
   ['fecha.larga', 'Fecha del contrato'], ['fecha.ciudad', 'Ciudad donde se firma'],
+  ['empresa.email', 'Tu correo'], ['empresa.telefono', 'Tu teléfono'], ['empresa.iban', 'Tu IBAN'],
+  ['cliente.email', 'Correo del cliente'], ['cliente.telefono', 'Teléfono del cliente'],
+  ['presupuesto.fecha', 'Fecha del presupuesto'], ['presupuesto.partidas', 'Partidas del presupuesto (pago único, anual y mensual)'],
 ] as const;
+
+/** Partidas de un presupuesto agrupadas como en su PDF: pago único, pago anual (unidad «año») y cuota mensual (unidad «mes») */
+function partidasPresupuesto(lineas: any[] | undefined) {
+  if (!lineas?.length) return '';
+  const grupos = [
+    { titulo: 'Pago único', sufijo: '', es: (u: string) => u !== 'mes' && u !== 'año' },
+    { titulo: 'Pago anual', sufijo: ' al año', es: (u: string) => u === 'año' },
+    { titulo: 'Cuota mensual', sufijo: ' al mes', es: (u: string) => u === 'mes' },
+  ];
+  return grupos
+    .map((g) => {
+      const ls = [...lineas].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)).filter((l) => g.es(l.unidad));
+      if (!ls.length) return '';
+      const filas = ls.map((l) => {
+        const [nombre, ...detalle] = String(l.concepto).split('\n');
+        const cant = Number(l.cantidad) !== 1 && l.unidad !== 'mes' && l.unidad !== 'año' ? ` × ${Number(l.cantidad)}` : '';
+        return `- **${nombre}**${detalle.length ? `: ${detalle.join(' ')}` : ''} · ${eurosEs(l.importe)}${g.sufijo}${cant} + IVA`;
+      });
+      return [`**${g.titulo}**`, ...filas].join('\n');
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 const fechaLargaEs = (f?: string | null) =>
   f ? new Date(`${f.slice(0, 10)}T12:00:00Z`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
@@ -377,6 +403,13 @@ export function rellenarPlantilla(
     'servicios.lista': (d.servicios ?? []).map((s) => `- ${s.nombre}${s.detalle ? ` (${s.detalle})` : ''}: ${eurosEs(s.precio)} ${periodo[s.periodicidad] ?? ''} + IVA`).join('\n'),
     'fecha.larga': fechaLargaEs(d.fecha),
     'fecha.ciudad': d.empresa?.ciudad ?? '',
+    'empresa.email': d.empresa?.email ?? '',
+    'empresa.telefono': d.empresa?.telefono ?? '',
+    'empresa.iban': d.empresa?.iban ?? '',
+    'cliente.email': d.cliente?.email ?? '',
+    'cliente.telefono': d.cliente?.telefono ?? '',
+    'presupuesto.fecha': fechaLargaEs(d.presupuesto?.fecha),
+    'presupuesto.partidas': partidasPresupuesto(d.presupuesto?.lineas),
   };
   return cuerpo.replace(/\{([a-z_]+\.[a-z_]+)\}/g, (todo, clave: string) => {
     if (!(clave in valores)) return todo;
