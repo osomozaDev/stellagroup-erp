@@ -103,6 +103,9 @@ function DetalleContrato({ id }: { id: string }) {
   const qc = useQueryClient();
   const avisar = useAviso();
   const navegar = useNavigate();
+  // ?firmar=1: se llega desde el presupuesto para enviarlo a firmar directamente
+  const [params, setParams] = useSearchParams();
+  const firmarAlEntrar = params.get('firmar') === '1';
   const [editar, setEditar] = useState(false);
   const [anular, setAnular] = useState(false);
   const [borrar, setBorrar] = useState(false);
@@ -171,7 +174,17 @@ function DetalleContrato({ id }: { id: string }) {
         )}
 
         {c.estado !== 'anulado' && (
-          <FirmaElectronica tipo="contrato" documento={c} puedeEnviar={['borrador', 'enviado', 'rechazado'].includes(c.estado) && faltan === 0} nombrePdf={nombrePdf} />
+          <FirmaElectronica
+            tipo="contrato"
+            documento={c}
+            puedeEnviar={['borrador', 'enviado', 'rechazado'].includes(c.estado) && faltan === 0}
+            nombrePdf={nombrePdf}
+            abrirEnvio={firmarAlEntrar}
+            onEnvioAbierto={() => {
+              if (faltan > 0) avisar('Completa los datos que faltan (en amarillo) y luego envíalo a firmar', true);
+              setParams({}, { replace: true });
+            }}
+          />
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">

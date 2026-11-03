@@ -8,7 +8,7 @@ import { api, descargar } from '../lib/api';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
 import {
   AreaTexto, Boton, Buscador, CabeceraDetalle, CabeceraLista, Campo, Cargando, ColorEtiqueta, Confirmar, Entrada, Etiqueta,
-  FilaLista, Filtros, ListaDetalle, Panel, Selector, SinSeleccion, Vacio, useAviso,
+  FilaLista, Filtros, ListaDetalle, Panel, Selector, SinSeleccion, Tarjeta, Vacio, cx, useAviso,
 } from '../components/ui';
 import FacturaDocumento from '../components/FacturaDocumento';
 import FirmaElectronica from '../components/FirmaElectronica';
@@ -166,9 +166,7 @@ function DetallePresupuesto({ id }: { id: string }) {
           <>
             <Boton variante="secundario" icono={<Download className="size-4" />} onClick={pdf} cargando={bajando}>PDF</Boton>
             {p.estado !== 'aceptado' && !bloqueado && <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>}
-            {p.cliente_id
-              ? <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => navegar(`/contratos?nuevo=1&cliente=${p.cliente_id}&presupuesto=${p.id}`)}>Crear contrato</Boton>
-              : <Boton variante="secundario" icono={<UserPlus className="size-4" />} onClick={() => alta.mutate()} cargando={alta.isPending}>Dar de alta como cliente</Boton>}
+            {!p.cliente_id && <Boton variante="secundario" icono={<UserPlus className="size-4" />} onClick={() => alta.mutate()} cargando={alta.isPending}>Dar de alta como cliente</Boton>}
             <Boton variante="secundario" icono={<Copy className="size-4" />} onClick={() => duplicar.mutate()} cargando={duplicar.isPending}>Duplicar</Boton>
             {p.estado !== 'aceptado' && <Boton variante="fantasma" icono={<Trash2 className="size-4" />} onClick={() => setBorrar(true)} aria-label="Borrar" />}
           </>
@@ -215,6 +213,8 @@ function DetallePresupuesto({ id }: { id: string }) {
             <Boton variante="secundario" icono={<Undo2 className="size-4" />} onClick={() => estado.mutate('enviado')}>Volver a enviado</Boton>
           </div>
         )}
+
+        {p.estado !== 'rechazado' && <ContratoDelPresupuesto p={p} />}
 
         <FirmaElectronica tipo="presupuesto" documento={p} puedeEnviar={abierto} nombrePdf={`Presupuesto ${p.numero} - ${p.cliente?.nombre ?? ''}${firmado ? ' (firmado)' : ''}.pdf`} />
 
@@ -441,5 +441,83 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
         </div>
       </div>
     </Panel>
+  );
+}
+
+/**
+ * El contrato que sale de este presupuesto: si aún no hay, se crea en un paso con la
+ * plantilla (por defecto, la de servicios web), el plazo de entrega y el precio por hora,
+ * y se puede ir directamente a enviarlo a firmar.
+ */
+function ContratoDelPresupuesto({ p }: { p: any }) {
+  const qc = useQueryClient();
+  const avisar = useAviso();
+  const navegar = useNavigate();
+  const contrato = (p.contratos ?? []).filter((c: any) => c.estado !== 'anulado').sort((a: any, b: any) => b.created_at.localeCompare(a.created_at))[0];
+  const { data: plantillas } = useQuery({ queryKey: ['plantillas-contrato'], queryFn: () => api<any[]>('/plantillas-contrato'), enabled: !contrato });
+  const activas = (plantillas ?? []).filter((x) => x.activa);
+  const porDefecto = (activas.find((x) => /servicios web/i.test(x.nombre)) ?? activas.find((x) => /desarrollo/i.test(x.nombre)) ?? activas[0])?.id ?? '';
+  const [plantilla, setPlantilla] = useState('');
+  const [plazo, setPlazo] = useState('');
+  const [precioHora, setPrecioHora] = useState('');
+
+  const crear = useMutation({
+    mutationFn: (_firmar: boolean) =>
+      api<any>(`/presupuestos/${p.id}/contrato`, {
+        method: 'POST',
+        body: { plantilla_id: plantilla || porDefecto || null, plazo_dias: plazo || null, precio_hora: precioHora === '' ? null : precioHora },
+      }),
+    onSuccess: (c, firmar) => {
+      qc.invalidateQueries();
+      avisar(c.existente ? `Ya tenía el contrato ${c.numero}` : c.faltan?.length ? `Contrato ${c.numero} creado: faltan ${c.faltan.length} datos` : `Contrato ${c.numero} creado`);
+      navegar(`/contratos/${c.id}${firmar ? '?firmar=1' : ''}`);
+    },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+
+  if (contrato) {
+    const firmado = contrato.estado === 'firmado';
+    return (
+      <Tarjeta titulo="Contrato">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <FileText className={cx('size-7 shrink-0', firmado ? 'text-emerald-600' : 'text-marca-500')} />
+          <div className="flex-1">
+            <p className="font-semibold">{contrato.titulo}</p>
+            <p className="text-sm text-slate-500">
+              {contrato.numero} · {{ borrador: 'sin enviar', enviado: 'pendiente de firma', firmado: `firmado el ${fecha(contrato.firmado_en?.slice(0, 10))}`, rechazado: 'rechazado' }[contrato.estado as string] ?? contrato.estado}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {['borrador', 'rechazado'].includes(contrato.estado) && (
+              <Boton icono={<Send className="size-4" />} onClick={() => navegar(`/contratos/${contrato.id}?firmar=1`)}>Enviar a firmar</Boton>
+            )}
+            <Boton variante="secundario" onClick={() => navegar(`/contratos/${contrato.id}`)}>Ver contrato</Boton>
+          </div>
+        </div>
+      </Tarjeta>
+    );
+  }
+
+  return (
+    <Tarjeta titulo="Contrato">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Pásalo a contrato: se rellena con los datos del cliente y este presupuesto va como Anexo I.{!p.cliente_id && ' El cliente se dará de alta con los datos escritos.'}
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Campo etiqueta="Plantilla" className="sm:col-span-3">
+            <Selector value={plantilla || porDefecto} onChange={(e) => setPlantilla(e.target.value)}>
+              {activas.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+            </Selector>
+          </Campo>
+          <Campo etiqueta="Plazo de entrega (días hábiles)"><Entrada type="number" inputMode="numeric" min={1} value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="20" /></Campo>
+          <Campo etiqueta="Precio por hora de cambios €"><Entrada type="number" inputMode="decimal" min={0} value={precioHora} onChange={(e) => setPrecioHora(e.target.value)} placeholder="40" /></Campo>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Boton icono={<Send className="size-4" />} onClick={() => crear.mutate(true)} cargando={crear.isPending && crear.variables} disabled={!activas.length}>Pasar a contrato y enviar a firmar</Boton>
+          <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => crear.mutate(false)} cargando={crear.isPending && !crear.variables} disabled={!activas.length}>Solo crear el contrato</Boton>
+        </div>
+      </div>
+    </Tarjeta>
   );
 }

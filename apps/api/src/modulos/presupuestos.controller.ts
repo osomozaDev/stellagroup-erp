@@ -12,8 +12,17 @@ import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { remitenteDe } from '../comun/remitente';
 import { clienteDePresupuesto } from '../comun/alta-cliente';
+import { textoDeContrato } from '../comun/contrato-de-plantilla';
+import { z } from 'zod';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+
+/** Pasar un presupuesto a contrato: la plantilla y los dos datos que cambian en cada contrato */
+const aContratoSchema = z.object({
+  plantilla_id: z.string().uuid().optional().nullable(),
+  plazo_dias: z.coerce.number().int().min(1, 'Pon el plazo de entrega en días').max(730).optional().nullable(),
+  precio_hora: z.coerce.number().min(0).max(10000).optional().nullable(),
+});
 
 /** Si el presupuesto no tiene cliente de la lista, el escrito a mano con la misma forma */
 const conCliente = (p: any) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) });
@@ -45,7 +54,7 @@ export class PresupuestosController {
     const p = ok(
       await this.db
         .from('presupuestos')
-        .select('*, cliente:clientes(*), proyecto:proyectos(id, nombre), lineas:presupuesto_lineas(*)')
+        .select('*, cliente:clientes(*), proyecto:proyectos(id, nombre), lineas:presupuesto_lineas(*), contratos(id, numero, titulo, estado, firmado_en, created_at)')
         .eq('id', id)
         .order('orden', { referencedTable: 'presupuesto_lineas' })
         .single(),
@@ -165,6 +174,45 @@ export class PresupuestosController {
     return ok(
       await this.db.from('presupuestos').update({ estado: 'aceptado', respondido_en: p.respondido_en ?? hoy(), proyecto_id: proyectoId }).eq('id', id).select().single(),
     );
+  }
+
+  /**
+   * Convierte el presupuesto en contrato con la plantilla elegida (por defecto, la de
+   * servicios web): da de alta al cliente si estaba escrito a mano, rellena la plantilla
+   * con el presupuesto como Anexo I y pone el plazo de entrega y el precio por hora.
+   * Si el presupuesto ya tiene un contrato que no está anulado, devuelve ese.
+   */
+  @Post(':id/contrato')
+  async aContrato(@Param('id') id: string, @Body(new ZodPipe(aContratoSchema)) body: z.infer<typeof aContratoSchema>) {
+    const p = ok(await this.db.from('presupuestos').select('id, numero, titulo, estado, proyecto_id, contratos(id, numero, estado)').eq('id', id).single()) as any;
+    if (p.estado === 'rechazado') throw new BadRequestException('Este presupuesto está rechazado');
+    const vivo = (p.contratos ?? []).find((c: any) => c.estado !== 'anulado');
+    if (vivo) return { ...vivo, existente: true };
+
+    const cliente = await clienteDePresupuesto(this.db, id);
+    let plantillaId = body.plantilla_id ?? null;
+    if (!plantillaId) {
+      const activas = ok(await this.db.from('plantillas_contrato').select('id, nombre').eq('activa', true).order('created_at')) as any[];
+      plantillaId = (activas.find((x) => /servicios web/i.test(x.nombre)) ?? activas.find((x) => /desarrollo/i.test(x.nombre)) ?? activas[0])?.id ?? null;
+    }
+    if (!plantillaId) throw new BadRequestException('No hay ninguna plantilla de contrato activa');
+
+    const t = await textoDeContrato(this.db, { plantillaId, clienteId: cliente.id, presupuestoId: id, proyectoId: p.proyecto_id, fecha: hoy() });
+    let cuerpo = t.cuerpo;
+    if (body.plazo_dias) cuerpo = cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(body.plazo_dias));
+    if (body.precio_hora != null) cuerpo = cuerpo.replace(/\[falta precio por hora[^\]]*\]/g, new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(body.precio_hora));
+
+    const fecha = hoy();
+    const numero = ok(await this.db.rpc('siguiente_numero_contrato', { p_anio: Number(fecha.slice(0, 4)) })) as string;
+    const c = ok(
+      await this.db
+        .from('contratos')
+        .insert({ numero, anio: Number(fecha.slice(0, 4)), cliente_id: cliente.id, presupuesto_id: id, proyecto_id: t.proyecto_id, plantilla_id: plantillaId, titulo: t.titulo, cuerpo, fecha })
+        .select('id, numero, estado, cuerpo')
+        .single(),
+    ) as any;
+    const { cuerpo: texto, ...resto } = c;
+    return { ...resto, existente: false, faltan: texto.match(/\[falta [^\]]+\]/g) ?? [] };
   }
 
   /** Da de alta como cliente a quien solo estaba escrito en el presupuesto */

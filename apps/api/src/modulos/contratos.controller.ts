@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patc
 import { Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
-  ContratoInput, contratoSchema, EnviarFirmaInput, enviarFirmaSchema, PlantillaContratoInput, plantillaContratoSchema, rellenarPlantilla,
+  ContratoInput, contratoSchema, EnviarFirmaInput, enviarFirmaSchema, PlantillaContratoInput, plantillaContratoSchema,
 } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
@@ -10,6 +10,7 @@ import { busqueda, ok } from '../comun/db';
 import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { remitenteDe } from '../comun/remitente';
+import { textoDeContrato } from '../comun/contrato-de-plantilla';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
@@ -45,22 +46,7 @@ export class ContratosController {
     @Query('presupuesto') presupuestoId?: string,
     @Query('fecha') fecha?: string,
   ) {
-    if (!plantillaId || !clienteId) throw new BadRequestException('Elige la plantilla y el cliente');
-    const [plantilla, empresa, cliente, proyecto, presupuesto, servicios] = await Promise.all([
-      this.db.from('plantillas_contrato').select('nombre, cuerpo').eq('id', plantillaId).single().then((r) => ok(r) as any),
-      this.db.from('empresa').select('*').eq('id', 1).single().then((r) => ok(r)),
-      this.db.from('clientes').select('*').eq('id', clienteId).single().then((r) => ok(r)),
-      proyectoId ? this.db.from('proyectos').select('*').eq('id', proyectoId).single().then((r) => ok(r)) : null,
-      presupuestoId ? this.db.from('presupuestos').select('*, lineas:presupuesto_lineas(*)').eq('id', presupuestoId).single().then((r) => ok(r) as any) : null,
-      this.db.from('servicios').select('nombre, detalle, precio, periodicidad').eq('cliente_id', clienteId).eq('estado', 'activo').order('nombre').then((r) => ok(r) as any[]),
-    ]);
-    // Sin proyecto elegido, el del presupuesto
-    const proyectoFinal = proyecto ?? (presupuesto?.proyecto_id ? ok(await this.db.from('proyectos').select('*').eq('id', presupuesto.proyecto_id).single()) : null);
-    return {
-      titulo: `${plantilla.nombre}${proyectoFinal?.nombre ? ` · ${proyectoFinal.nombre}` : presupuesto ? ` · ${presupuesto.titulo}` : ''}`,
-      cuerpo: rellenarPlantilla(plantilla.cuerpo, { empresa, cliente, proyecto: proyectoFinal, presupuesto, servicios, fecha: fecha || hoy() }),
-      proyecto_id: proyectoFinal?.id ?? null,
-    };
+    return textoDeContrato(this.db, { plantillaId, clienteId, proyectoId, presupuestoId, fecha });
   }
 
   @Get(':id')

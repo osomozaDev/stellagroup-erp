@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, CheckCircle2, Copy, Download, Eye, MailCheck, PenLine, Send, ShieldCheck, XCircle } from 'lucide-react';
 import { api, descargar } from '../lib/api';
@@ -14,8 +14,12 @@ const fechaHora = (f?: string | null) =>
  * punto está (enviado, abierto, firmado o rechazado) y descargar la copia firmada.
  */
 export default function FirmaElectronica({
-  tipo, documento, puedeEnviar, nombrePdf,
-}: { tipo: 'presupuesto' | 'contrato'; documento: any; puedeEnviar: boolean; nombrePdf: string }) {
+  tipo, documento, puedeEnviar, nombrePdf, abrirEnvio, onEnvioAbierto,
+}: {
+  tipo: 'presupuesto' | 'contrato'; documento: any; puedeEnviar: boolean; nombrePdf: string;
+  /** Abre el panel de enviar a firmar al cargar (se llega así desde «Pasar a contrato y enviar a firmar») */
+  abrirEnvio?: boolean; onEnvioAbierto?: () => void;
+}) {
   const qc = useQueryClient();
   const avisar = useAviso();
   const [enviar, setEnviar] = useState(false);
@@ -25,6 +29,13 @@ export default function FirmaElectronica({
   const ruta = `/${tipo === 'contrato' ? 'contratos' : 'presupuestos'}/${documento.id}`;
   const firmas: any[] = documento.firmas ?? [];
   const actual = firmas.find((f) => f.estado === 'pendiente' || f.estado === 'firmado') ?? firmas.find((f) => f.estado === 'rechazado');
+
+  useEffect(() => {
+    if (!abrirEnvio) return;
+    if (puedeEnviar && !firmas.some((f: any) => f.estado === 'pendiente' || f.estado === 'firmado')) setEnviar(true);
+    onEnvioAbierto?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirEnvio]);
 
   const anularFirma = useMutation({
     mutationFn: () => api(`${ruta}/firma`, { method: 'DELETE' }),
