@@ -12,7 +12,8 @@ export class CatalogoController {
 
   @Get()
   async listar(@Query('q') q?: string, @Query('todos') todos?: string) {
-    let query = this.db.from('catalogo').select('*').order('categoria', { nullsFirst: false }).order('nombre');
+    // Dentro de cada categoría, de más barato a más caro (Básico, Estándar, Avanzado…)
+    let query = this.db.from('catalogo').select('*').order('categoria', { nullsFirst: false }).order('precio').order('nombre');
     if (todos !== '1') query = query.eq('activo', true);
     if (q && (q = busqueda(q))) query = query.or(`nombre.ilike.%${q}%,descripcion.ilike.%${q}%,categoria.ilike.%${q}%`);
     return ok(await query);
