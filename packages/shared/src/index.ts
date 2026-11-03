@@ -229,7 +229,9 @@ export const ESTADOS_PRESUPUESTO = ['borrador', 'enviado', 'aceptado', 'rechazad
 export type EstadoPresupuesto = (typeof ESTADOS_PRESUPUESTO)[number];
 
 export const presupuestoSchema = z.object({
-  cliente_id: z.string().uuid('Elige un cliente'),
+  // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano (una cosa por línea)
+  cliente_id: z.string().uuid().optional().nullable().or(z.literal('')).transform((v) => v || null),
+  cliente_texto: texto,
   titulo: z.string().trim().min(1, 'Ponle un título al presupuesto'),
   introduccion: texto,
   fecha: z.string().min(1),
@@ -239,8 +241,18 @@ export const presupuestoSchema = z.object({
   condiciones: texto,
   notas: texto,
   lineas: z.array(lineaSchema).min(1, 'Añade al menos una línea'),
-});
+}).refine((p) => p.cliente_id || p.cliente_texto, { message: 'Elige un cliente o escribe sus datos' });
 export type PresupuestoInput = z.infer<typeof presupuestoSchema>;
+
+/**
+ * Cliente de un presupuesto escrito a mano → la misma forma que un cliente de la lista,
+ * para que la ficha, el PDF y la firma lo muestren igual. La primera línea es el nombre.
+ */
+export function clienteDeTexto(texto?: string | null) {
+  const lineas = (texto ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lineas.length) return null;
+  return { id: null, nombre: lineas[0], lineas: lineas.slice(1), email: lineas.find((l) => /^\S+@\S+\.\S+$/.test(l)) ?? null, contacto: null };
+}
 
 /** Al aceptar un presupuesto se crea el proyecto y cada línea pasa a ser un hito */
 export const aceptarPresupuestoSchema = z.object({

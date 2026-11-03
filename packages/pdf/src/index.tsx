@@ -77,9 +77,14 @@ export function FacturaPdf({ f }: { f: any }) {
           <View style={[s.caja, { backgroundColor: suave }]}>
             <Text style={s.etiqueta}>{presupuesto ? 'Cliente' : 'Facturar a'}</Text>
             <Text style={[s.fuerte, { fontSize: 10, marginBottom: 2 }]}>{c.nombre}</Text>
-            {c.cif && <Text style={s.texto}>CIF {c.cif}</Text>}
-            {c.direccion && <Text style={s.texto}>{c.direccion}</Text>}
-            <Text style={s.texto}>{lineaDir(c.cp, c.ciudad, c.provincia && `(${c.provincia})`)}</Text>
+            {/* Cliente escrito a mano en el presupuesto: sus líneas tal cual */}
+            {c.lineas ? c.lineas.map((l: string, i: number) => <Text key={i} style={s.texto}>{l}</Text>) : (
+              <>
+                {c.cif && <Text style={s.texto}>CIF {c.cif}</Text>}
+                {c.direccion && <Text style={s.texto}>{c.direccion}</Text>}
+                <Text style={s.texto}>{lineaDir(c.cp, c.ciudad, c.provincia && `(${c.provincia})`)}</Text>
+              </>
+            )}
           </View>
           {(f.proyecto || presupuesto) && (
             <View style={[s.caja, { backgroundColor: suave }]}>

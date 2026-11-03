@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, GoneException, Inject, Injecta
 import { ConfigService } from '@nestjs/config';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { EnviarFirmaInput, FirmarInput } from '@stella/shared';
+import { clienteDeTexto, EnviarFirmaInput, FirmarInput } from '@stella/shared';
 import { nombreArchivoPdf } from '@stella/pdf';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
@@ -64,7 +64,7 @@ export class FirmasService {
           .order('orden', { referencedTable: 'presupuesto_lineas' })
           .single(),
       ) as any;
-      return { ...p, empresa, tipo_documento: 'presupuesto' };
+      return { ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto), empresa, tipo_documento: 'presupuesto' };
     }
     const c = ok(
       await this.db

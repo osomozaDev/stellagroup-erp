@@ -38,9 +38,13 @@ export default function FacturaDocumento({ f }: { f: any }) {
           <div className="rounded-lg p-4" style={{ background: suave }}>
             <p className="text-xs text-slate-500 mb-1">{presupuesto ? 'Cliente' : 'Facturar a'}</p>
             <p className="font-semibold">{c.nombre}</p>
-            {c.cif && <p>CIF {c.cif}</p>}
-            <p>{c.direccion}</p>
-            <p>{linea(c.cp, c.ciudad, c.provincia && `(${c.provincia})`)}</p>
+            {c.lineas ? c.lineas.map((l: string, i: number) => <p key={i}>{l}</p>) : (
+              <>
+                {c.cif && <p>CIF {c.cif}</p>}
+                <p>{c.direccion}</p>
+                <p>{linea(c.cp, c.ciudad, c.provincia && `(${c.provincia})`)}</p>
+              </>
+            )}
           </div>
           {(f.proyecto || presupuesto) && (
             <div className="rounded-lg p-4" style={{ background: suave }}>

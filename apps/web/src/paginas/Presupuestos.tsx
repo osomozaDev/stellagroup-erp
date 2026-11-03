@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Pencil, Plus, Send, Trash2, Undo2, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
 import { calcularTotales, EstadoPresupuesto, TIPOS_PROYECTO } from '@stella/shared';
 import { api, descargar } from '../lib/api';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
@@ -118,6 +118,11 @@ function DetallePresupuesto({ id }: { id: string }) {
     onSuccess: (r) => { qc.invalidateQueries(); avisar(`Copia creada: ${r.numero}`); navegar(`/presupuestos/${r.id}`); },
     onError: (e: Error) => avisar(e.message, true),
   });
+  const alta = useMutation({
+    mutationFn: () => api<any>(`/presupuestos/${id}/alta-cliente`, { method: 'POST' }),
+    onSuccess: (c) => { qc.invalidateQueries(); avisar(`${c.nombre} ya está en Clientes. Revisa su ficha por si falta algún dato.`); },
+    onError: (e: Error) => avisar(e.message, true),
+  });
   const eliminar = useMutation({
     mutationFn: () => api(`/presupuestos/${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries(); avisar('Presupuesto borrado'); navegar('/presupuestos'); },
@@ -147,13 +152,20 @@ function DetallePresupuesto({ id }: { id: string }) {
       <CabeceraDetalle
         volver="/presupuestos"
         titulo={`Presupuesto ${p.numero}`}
-        subtitulo={<span className="flex items-center gap-2"><Etiqueta color={e.color}>{e.texto}</Etiqueta><Link to={`/clientes/${p.cliente.id}`} className="hover:underline truncate">{p.cliente.nombre}</Link></span>}
+        subtitulo={
+          <span className="flex items-center gap-2">
+            <Etiqueta color={e.color}>{e.texto}</Etiqueta>
+            {p.cliente_id ? <Link to={`/clientes/${p.cliente_id}`} className="hover:underline truncate">{p.cliente?.nombre}</Link> : <span className="truncate">{p.cliente?.nombre}</span>}
+          </span>
+        }
         visiblesEstrecho={2}
         acciones={
           <>
             <Boton variante="secundario" icono={<Download className="size-4" />} onClick={pdf} cargando={bajando}>PDF</Boton>
             {p.estado !== 'aceptado' && !bloqueado && <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>}
-            <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => navegar(`/contratos?nuevo=1&cliente=${p.cliente_id}&presupuesto=${p.id}`)}>Crear contrato</Boton>
+            {p.cliente_id
+              ? <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => navegar(`/contratos?nuevo=1&cliente=${p.cliente_id}&presupuesto=${p.id}`)}>Crear contrato</Boton>
+              : <Boton variante="secundario" icono={<UserPlus className="size-4" />} onClick={() => alta.mutate()} cargando={alta.isPending}>Dar de alta como cliente</Boton>}
             <Boton variante="secundario" icono={<Copy className="size-4" />} onClick={() => duplicar.mutate()} cargando={duplicar.isPending}>Duplicar</Boton>
             {p.estado !== 'aceptado' && <Boton variante="fantasma" icono={<Trash2 className="size-4" />} onClick={() => setBorrar(true)} aria-label="Borrar" />}
           </>
@@ -278,6 +290,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
   const { data: empresa } = useQuery({ queryKey: ['empresa'], queryFn: () => api('/empresa') });
   const [v, setV] = useState(() => ({
     cliente_id: presupuesto?.cliente_id ?? '',
+    cliente_texto: presupuesto?.cliente_texto ?? '',
     titulo: presupuesto?.titulo ?? '',
     introduccion: presupuesto?.introduccion ?? '',
     fecha: presupuesto?.fecha ?? hoyISO(),
@@ -293,12 +306,20 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
     ],
   );
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
+  // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano
+  const [aMano, setAMano] = useState<'lista' | 'texto'>(presupuesto && !presupuesto.cliente_id ? 'texto' : 'lista');
   const cambiarLinea = (i: number, k: keyof Linea, valor: string) => setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: valor } : l)));
   const t = calcularTotales(lineas.map((l) => ({ cantidad: Number(l.cantidad) || 0, precio: Number(l.precio) || 0 })), Number(v.iva_pct) || 0, Number(v.retencion_pct) || 0);
 
   const guardar = useMutation({
     mutationFn: () => {
-      const body = { ...v, valido_hasta: v.valido_hasta || null, lineas };
+      const body = {
+        ...v,
+        cliente_id: aMano === 'lista' ? v.cliente_id : null,
+        cliente_texto: aMano === 'texto' ? v.cliente_texto : null,
+        valido_hasta: v.valido_hasta || null,
+        lineas,
+      };
       return presupuesto ? api<any>(`/presupuestos/${presupuesto.id}`, { method: 'PATCH', body }) : api<any>('/presupuestos', { method: 'POST', body });
     },
     onSuccess: (r) => {
@@ -320,13 +341,30 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
     >
       <div className="space-y-5">
         <div className="grid sm:grid-cols-2 gap-4">
-          <Campo etiqueta="Cliente">
-            <Selector value={v.cliente_id} onChange={(e) => poner('cliente_id', e.target.value)}>
-              <option value="">Elige un cliente…</option>
-              {clientes?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </Selector>
-          </Campo>
-          <Campo etiqueta="Título"><Entrada value={v.titulo} onChange={(e) => poner('titulo', e.target.value)} placeholder="Nueva web corporativa con blog" /></Campo>
+          <div className="sm:col-span-2 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-slate-700">Cliente</p>
+              <Filtros valor={aMano} onCambio={setAMano} opciones={[{ valor: 'lista', texto: 'De la lista' }, { valor: 'texto', texto: 'Escribirlo' }]} />
+            </div>
+            {aMano === 'lista' ? (
+              <Selector value={v.cliente_id} onChange={(e) => poner('cliente_id', e.target.value)} aria-label="Cliente">
+                <option value="">Elige un cliente…</option>
+                {clientes?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </Selector>
+            ) : (
+              <>
+                <AreaTexto
+                  rows={4}
+                  aria-label="Datos del cliente"
+                  value={v.cliente_texto}
+                  onChange={(e) => poner('cliente_texto', e.target.value)}
+                  placeholder={'Panadería La Espiga S.L.\nB12345678\nC/ Mayor 3, 28013 Madrid\nhola@laespiga.es'}
+                />
+                <p className="text-xs text-slate-500">Una cosa por línea; la primera es el nombre. Sale tal cual en el presupuesto. Si lo acepta, se da de alta como cliente.</p>
+              </>
+            )}
+          </div>
+          <Campo etiqueta="Título" className="sm:col-span-2"><Entrada value={v.titulo} onChange={(e) => poner('titulo', e.target.value)} placeholder="Nueva web corporativa con blog" /></Campo>
           <Campo etiqueta="Fecha"><Entrada type="date" value={v.fecha} onChange={(e) => poner('fecha', e.target.value)} /></Campo>
           <Campo etiqueta="Válido hasta" ayuda={`Si lo dejas vacío, ${empresa?.validez_presupuesto_dias ?? 30} días`}>
             <Entrada type="date" value={v.valido_hasta} onChange={(e) => poner('valido_hasta', e.target.value)} />

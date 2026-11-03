@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patc
 import { Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, EnviarFirmaInput, enviarFirmaSchema, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput,
+  AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, clienteDeTexto, EnviarFirmaInput, enviarFirmaSchema, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput,
   presupuestoSchema, redondear,
 } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
@@ -12,6 +12,26 @@ import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+
+/** Ficha de cliente a partir de los datos escritos a mano: nombre en la primera línea; CIF, correo y teléfono donde se reconozcan */
+function fichaDeTexto(texto: string) {
+  const [nombre, ...resto] = texto.split('\n').map((l) => l.trim()).filter(Boolean);
+  const quitar = (l: string) => l.replace(/^(cif|nif|dni|email|e-mail|correo|tel[eé]fono|tel|m[oó]vil)\.?\s*:?\s*/i, '').trim();
+  const cif = resto.map(quitar).find((l) => /^([A-Z]\d{7}[A-Z0-9]|\d{8}[A-Z]|[XYZ]\d{7}[A-Z])$/i.test(l.replace(/[\s.-]/g, '')));
+  const email = resto.map(quitar).find((l) => /^\S+@\S+\.\S+$/.test(l));
+  const telefono = resto.map(quitar).find((l) => /^\+?[\d\s]{9,15}$/.test(l));
+  const otras = resto.filter((l) => ![cif, email, telefono].includes(quitar(l)));
+  return {
+    nombre,
+    cif: cif ? cif.replace(/[\s.-]/g, '').toUpperCase() : null,
+    email: email ?? null,
+    telefono: telefono ?? null,
+    direccion: otras.join(', ') || null,
+  };
+}
+
+/** Si el presupuesto no tiene cliente de la lista, el escrito a mano con la misma forma */
+const conCliente = (p: any) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) });
 
 @Controller('presupuestos')
 export class PresupuestosController {
@@ -25,14 +45,14 @@ export class PresupuestosController {
   async listar(@Query('q') q?: string, @Query('estado') estado?: string) {
     let query = this.db
       .from('presupuestos')
-      .select('id, numero, titulo, fecha, valido_hasta, estado, total, base, cliente:clientes(id, nombre), proyecto:proyectos(id, nombre)')
+      .select('id, numero, titulo, fecha, valido_hasta, estado, total, base, cliente_texto, cliente:clientes(id, nombre), proyecto:proyectos(id, nombre)')
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false });
     if (estado && ESTADOS_PRESUPUESTO.includes(estado as EstadoPresupuesto)) query = query.eq('estado', estado);
-    if (q && (q = busqueda(q))) query = query.or(`numero.ilike.%${q}%,titulo.ilike.%${q}%`);
+    if (q && (q = busqueda(q))) query = query.or(`numero.ilike.%${q}%,titulo.ilike.%${q}%,cliente_texto.ilike.%${q}%`);
     const lista = ok(await query) as any[];
     // Un presupuesto enviado que ya pasó su validez se marca como caducado (sin cambiar su estado)
-    return lista.map((p) => ({ ...p, caducado: p.estado === 'enviado' && !!p.valido_hasta && p.valido_hasta < hoy() }));
+    return lista.map((p) => ({ ...conCliente(p), caducado: p.estado === 'enviado' && !!p.valido_hasta && p.valido_hasta < hoy() }));
   }
 
   @Get(':id')
@@ -49,7 +69,7 @@ export class PresupuestosController {
       this.db.from('empresa').select('*').eq('id', 1).single().then((r) => ok(r)),
       this.firmas.deDocumento('presupuesto', id),
     ]);
-    return { ...p, empresa, firmas, tipo_documento: 'presupuesto' };
+    return { ...conCliente(p), empresa, firmas, tipo_documento: 'presupuesto' };
   }
 
   @Get(':id/pdf')
@@ -65,7 +85,8 @@ export class PresupuestosController {
     const t = calcularTotales(input.lineas, input.iva_pct, input.retencion_pct);
     const { lineas, ...cabecera } = input;
     return {
-      cabecera: { ...cabecera, ...t },
+      // Con cliente de la lista, el texto escrito a mano ya no hace falta
+      cabecera: { ...cabecera, cliente_texto: cabecera.cliente_id ? null : cabecera.cliente_texto, ...t },
       lineas: lineas.map((l, i) => ({ ...l, orden: i, importe: redondear(l.cantidad * l.precio) })),
     };
   }
@@ -119,11 +140,13 @@ export class PresupuestosController {
     if (p.estado === 'aceptado' && (p.proyecto_id || !body.crear_proyecto)) throw new BadRequestException('Este presupuesto ya está aceptado');
     let proyectoId: string | null = p.proyecto_id ?? null;
     if (body.crear_proyecto && !proyectoId) {
+      // Un proyecto necesita un cliente de la lista: si solo había datos escritos, se da de alta
+      const clienteId = p.cliente_id ?? (await this.altaCliente(id)).id;
       const proyecto = ok(
         await this.db
           .from('proyectos')
           .insert({
-            cliente_id: p.cliente_id,
+            cliente_id: clienteId,
             nombre: body.nombre || p.titulo,
             referencia: p.numero,
             tipo: body.tipo,
@@ -159,6 +182,17 @@ export class PresupuestosController {
     );
   }
 
+  /** Da de alta como cliente a quien solo estaba escrito en el presupuesto */
+  @Post(':id/alta-cliente')
+  async altaCliente(@Param('id') id: string) {
+    const p = ok(await this.db.from('presupuestos').select('cliente_id, cliente_texto').eq('id', id).single()) as any;
+    if (p.cliente_id) throw new BadRequestException('Este presupuesto ya tiene un cliente de la lista');
+    if (!p.cliente_texto?.trim()) throw new BadRequestException('El presupuesto no tiene datos del cliente');
+    const cliente = ok(await this.db.from('clientes').insert(fichaDeTexto(p.cliente_texto)).select().single()) as any;
+    ok(await this.db.from('presupuestos').update({ cliente_id: cliente.id }).eq('id', id));
+    return cliente;
+  }
+
   @Post(':id/firma')
   enviarFirma(@Param('id') id: string, @Body(new ZodPipe(enviarFirmaSchema)) body: EnviarFirmaInput, @Req() req: any) {
     return this.firmas.enviar('presupuesto', id, body, req.user?.email ?? null);
@@ -175,6 +209,7 @@ export class PresupuestosController {
     const p = await this.ver(id);
     return this.crear({
       cliente_id: p.cliente_id,
+      cliente_texto: p.cliente_texto,
       titulo: `${p.titulo} (copia)`,
       introduccion: p.introduccion,
       fecha: hoy(),

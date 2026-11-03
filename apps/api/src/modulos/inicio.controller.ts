@@ -1,6 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { importeMensual, primerDiaMes } from '@stella/shared';
+import { clienteDeTexto, importeMensual, primerDiaMes } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
 
@@ -41,7 +41,7 @@ export class InicioController {
         .is('factura_id', null)
         .order('completado_en'),
       this.db.from('servicios').select('id, nombre, tipo, precio, coste, periodicidad, proxima_renovacion, cliente:clientes(nombre)').eq('estado', 'activo').order('proxima_renovacion'),
-      this.db.from('presupuestos').select('id, numero, titulo, total, fecha, valido_hasta, cliente:clientes(nombre)').eq('estado', 'enviado').order('fecha'),
+      this.db.from('presupuestos').select('id, numero, titulo, total, fecha, valido_hasta, cliente_texto, cliente:clientes(nombre)').eq('estado', 'enviado').order('fecha'),
     ]);
     const datosEmpresa = ok(empresa) as { cif: string | null; iban: string | null };
 
@@ -78,7 +78,7 @@ export class InicioController {
       recurrente_mes: servs.reduce((t, x) => t + importeMensual(Number(x.precio), x.periodicidad), 0),
       margen_recurrente_mes: servs.reduce((t, x) => t + importeMensual(Number(x.precio) - Number(x.coste), x.periodicidad), 0),
       servicios_activos: servs.length,
-      presupuestos_pendientes: ok(presupuestos) as any[],
+      presupuestos_pendientes: (ok(presupuestos) as any[]).map((p) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) })),
       por_cobrar: porCobrar.reduce((s, f) => s + Number(f.total), 0),
       vencidas: porCobrar.filter((f) => f.vencimiento && f.vencimiento < hoy),
       pendientes: porCobrar.map((f) => ({ ...f, vencida: !!f.vencimiento && f.vencimiento < hoy })),
