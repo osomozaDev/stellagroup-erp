@@ -340,7 +340,7 @@ export const VARIABLES_CONTRATO = [
   ['proyecto.inicio', 'Fecha de inicio'], ['proyecto.entrega', 'Entrega prevista'], ['presupuesto.numero', 'Nº de presupuesto'],
   ['presupuesto.base', 'Importe sin IVA'], ['presupuesto.total', 'Importe con IVA'], ['servicios.lista', 'Servicios recurrentes del cliente'],
   ['fecha.larga', 'Fecha del contrato'], ['fecha.ciudad', 'Ciudad donde se firma'],
-  ['empresa.email', 'Tu correo'], ['empresa.telefono', 'Tu teléfono'], ['empresa.iban', 'Tu IBAN'],
+  ['empresa.email', 'Tu correo'], ['empresa.telefono', 'Tu teléfono'], ['empresa.iban', 'Tu IBAN (si no lo hay: «que figure en cada factura»)'],
   ['cliente.email', 'Correo del cliente'], ['cliente.telefono', 'Teléfono del cliente'],
   ['presupuesto.fecha', 'Fecha del presupuesto'], ['presupuesto.partidas', 'Partidas del presupuesto (pago único, anual y mensual)'],
 ] as const;
@@ -405,7 +405,8 @@ export function rellenarPlantilla(
     'fecha.ciudad': d.empresa?.ciudad ?? '',
     'empresa.email': d.empresa?.email ?? '',
     'empresa.telefono': d.empresa?.telefono ?? '',
-    'empresa.iban': d.empresa?.iban ?? '',
+    // El IBAN no es obligatorio: sin él, «a la cuenta que figure en cada factura»
+    'empresa.iban': d.empresa?.iban || 'que figure en cada factura',
     'cliente.email': d.cliente?.email ?? '',
     'cliente.telefono': d.cliente?.telefono ?? '',
     'presupuesto.fecha': fechaLargaEs(d.presupuesto?.fecha),
