@@ -40,7 +40,19 @@ function pedirContrasena() {
   });
 }
 
-const password = passwordArg ?? (await pedirContrasena());
+/** Pide la contraseña dos veces: al no verse, es fácil equivocarse al escribirla */
+async function pedirDosVeces() {
+  const primera = await pedirContrasena();
+  process.stdout.write('Repite la contraseña. ');
+  const segunda = await pedirContrasena();
+  if (primera !== segunda) {
+    console.error('Las dos contraseñas no coinciden. Vuelve a ejecutarlo.');
+    process.exit(1);
+  }
+  return primera;
+}
+
+const password = passwordArg ?? (await pedirDosVeces());
 if (password.length < 8) {
   console.error('La contraseña tiene que tener al menos 8 caracteres');
   process.exit(1);

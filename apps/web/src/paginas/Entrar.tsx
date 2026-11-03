@@ -15,7 +15,8 @@ export default function Entrar({ aviso }: { aviso?: string | null }) {
     setCargando(true);
     setError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password: clave });
-    if (error) setError('El correo o la contraseña no son correctos');
+    // Solo una contraseña o un correo equivocados son «incorrectos»; lo demás se explica tal cual
+    if (error) setError(error.code === 'invalid_credentials' ? 'El correo o la contraseña no son correctos' : `No se ha podido entrar: ${error.message}`);
     setCargando(false);
   };
 

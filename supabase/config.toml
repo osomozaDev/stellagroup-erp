@@ -420,8 +420,9 @@ project_id = "pzguyostcxbasjjkhnrn"
 [remotes.production.auth]
 site_url = "https://stellagroup-erp.vercel.app"
 additional_redirect_urls = ["https://stellagroup-erp.vercel.app/**"]
-# Los usuarios se crean desde la app (Usuarios) o con `pnpm crear-usuario … --prod`
+# Sin registro libre: los usuarios se crean desde la app (Usuarios) o con `pnpm crear-usuario … --prod`
 enable_signup = false
 
+# Ojo: aquí «enable_signup» enciende o apaga el acceso con correo y contraseña. Tiene que quedarse en true.
 [remotes.production.auth.email]
-enable_signup = false
+enable_signup = true
