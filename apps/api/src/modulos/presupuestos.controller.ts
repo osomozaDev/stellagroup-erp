@@ -11,25 +11,9 @@ import { busqueda, ok } from '../comun/db';
 import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { remitenteDe } from '../comun/remitente';
+import { clienteDePresupuesto } from '../comun/alta-cliente';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
-
-/** Ficha de cliente a partir de los datos escritos a mano: nombre en la primera línea; CIF, correo y teléfono donde se reconozcan */
-function fichaDeTexto(texto: string) {
-  const [nombre, ...resto] = texto.split('\n').map((l) => l.trim()).filter(Boolean);
-  const quitar = (l: string) => l.replace(/^(cif|nif|dni|email|e-mail|correo|tel[eé]fono|tel|m[oó]vil)\.?\s*:?\s*/i, '').trim();
-  const cif = resto.map(quitar).find((l) => /^([A-Z]\d{7}[A-Z0-9]|\d{8}[A-Z]|[XYZ]\d{7}[A-Z])$/i.test(l.replace(/[\s.-]/g, '')));
-  const email = resto.map(quitar).find((l) => /^\S+@\S+\.\S+$/.test(l));
-  const telefono = resto.map(quitar).find((l) => /^\+?[\d\s]{9,15}$/.test(l));
-  const otras = resto.filter((l) => ![cif, email, telefono].includes(quitar(l)));
-  return {
-    nombre,
-    cif: cif ? cif.replace(/[\s.-]/g, '').toUpperCase() : null,
-    email: email ?? null,
-    telefono: telefono ?? null,
-    direccion: otras.join(', ') || null,
-  };
-}
 
 /** Si el presupuesto no tiene cliente de la lista, el escrito a mano con la misma forma */
 const conCliente = (p: any) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) });
@@ -140,9 +124,9 @@ export class PresupuestosController {
     // Un presupuesto firmado por el cliente ya está aceptado: aquí solo falta crear el proyecto
     if (p.estado === 'aceptado' && (p.proyecto_id || !body.crear_proyecto)) throw new BadRequestException('Este presupuesto ya está aceptado');
     let proyectoId: string | null = p.proyecto_id ?? null;
+    // Al aceptarlo pasa a ser cliente: si solo estaba escrito a mano, se da de alta (con o sin proyecto)
+    const clienteId = (await clienteDePresupuesto(this.db, id)).id;
     if (body.crear_proyecto && !proyectoId) {
-      // Un proyecto necesita un cliente de la lista: si solo había datos escritos, se da de alta
-      const clienteId = p.cliente_id ?? (await this.altaCliente(id)).id;
       const proyecto = ok(
         await this.db
           .from('proyectos')
@@ -186,12 +170,9 @@ export class PresupuestosController {
   /** Da de alta como cliente a quien solo estaba escrito en el presupuesto */
   @Post(':id/alta-cliente')
   async altaCliente(@Param('id') id: string) {
-    const p = ok(await this.db.from('presupuestos').select('cliente_id, cliente_texto').eq('id', id).single()) as any;
+    const p = ok(await this.db.from('presupuestos').select('cliente_id').eq('id', id).single()) as any;
     if (p.cliente_id) throw new BadRequestException('Este presupuesto ya tiene un cliente de la lista');
-    if (!p.cliente_texto?.trim()) throw new BadRequestException('El presupuesto no tiene datos del cliente');
-    const cliente = ok(await this.db.from('clientes').insert(fichaDeTexto(p.cliente_texto)).select().single()) as any;
-    ok(await this.db.from('presupuestos').update({ cliente_id: cliente.id }).eq('id', id));
-    return cliente;
+    return clienteDePresupuesto(this.db, id);
   }
 
   @Post(':id/firma')

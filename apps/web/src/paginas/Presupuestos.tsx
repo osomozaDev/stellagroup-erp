@@ -271,6 +271,11 @@ function AceptarPresupuesto({ presupuesto: p, onCerrar }: { presupuesto: any; on
           Se crea un proyecto por hitos de <b>{euros(p.base)}</b> con {p.lineas.length === 1 ? 'un hito' : `${p.lineas.length} hitos`}, uno por cada partida del presupuesto.
           Luego puedes cambiar los hitos o repartirlos de otra manera.
         </p>
+        {!p.cliente_id && (
+          <p className="rounded-xl bg-marca-50 p-3 text-sm text-slate-700">
+            <b>{p.cliente?.nombre}</b> no está en tus clientes: se dará de alta con los datos escritos en el presupuesto, también si solo lo marcas como aceptado.
+          </p>
+        )}
         <Campo etiqueta="Nombre del proyecto"><Entrada value={nombre} onChange={(e) => setNombre(e.target.value)} /></Campo>
         <div className="grid grid-cols-2 gap-4">
           <Campo etiqueta="Tipo">

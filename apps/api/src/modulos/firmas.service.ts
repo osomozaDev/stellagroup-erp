@@ -5,6 +5,7 @@ import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 
 import { clienteDeTexto, EnviarFirmaInput, firmaCorreo, FirmarInput, firmaUsuario } from '@stella/shared';
 import { nombreArchivoPdf } from '@stella/pdf';
 import { SUPABASE } from '../comun/supabase.module';
+import { clienteDePresupuesto } from '../comun/alta-cliente';
 import { ok } from '../comun/db';
 import { CorreoService } from '../comun/correo.service';
 import { Remitente } from '../comun/remitente';
@@ -276,6 +277,8 @@ export class FirmasService {
     const hoy = ahora.slice(0, 10);
     if (f.documento_tipo === 'presupuesto') {
       ok(await this.db.from('presupuestos').update({ estado: 'aceptado', respondido_en: hoy }).eq('id', f.documento_id));
+      // Quien firma un presupuesto pasa a ser cliente: si estaba escrito a mano, se da de alta
+      await clienteDePresupuesto(this.db, f.documento_id).catch((e) => this.log.error(`Firma ${f.id}: no se ha podido dar de alta el cliente: ${e.message}`));
     } else {
       ok(await this.db.from('contratos').update({ estado: 'firmado', firmado_en: ahora }).eq('id', f.documento_id));
     }
