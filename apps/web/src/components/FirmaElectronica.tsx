@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, CheckCircle2, Copy, Download, Eye, MailCheck, PenLine, Send, ShieldCheck, XCircle } from 'lucide-react';
 import { api, descargar } from '../lib/api';
 import { AreaTexto, Boton, Campo, Confirmar, Entrada, Etiqueta, Panel, Tarjeta, useAviso } from './ui';
+import EnviarComo from './EnviarComo';
+import { EnviarComo as Como } from '@stella/shared';
 
 const fechaHora = (f?: string | null) =>
   f ? new Date(f).toLocaleString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -160,7 +162,7 @@ function EnviarAFirmar({ tipo, documento, ruta, onCerrar, onEnviado }: {
 }) {
   const qc = useQueryClient();
   const avisar = useAviso();
-  const [v, setV] = useState({ email: documento.cliente?.email ?? '', nombre: documento.cliente?.contacto ?? '', mensaje: '', dias: 30 });
+  const [v, setV] = useState({ email: documento.cliente?.email ?? '', nombre: documento.cliente?.contacto ?? '', mensaje: '', dias: 30, como: 'empresa' as Como });
   const enviar = useMutation({
     mutationFn: () => api<any>(`${ruta}/firma`, { method: 'POST', body: v }),
     onSuccess: (r) => { qc.invalidateQueries(); onEnviado({ url: r.enlace, modo: r.modo, error: r.error }); },
@@ -190,6 +192,7 @@ function EnviarAFirmar({ tipo, documento, ruta, onCerrar, onEnviado }: {
             {[7, 15, 30, 60].map((d) => <option key={d} value={d}>{d} días</option>)}
           </select>
         </Campo>
+        <EnviarComo valor={v.como} empresa={documento.empresa?.nombre ?? ''} onCambio={(como) => setV((x) => ({ ...x, como }))} />
       </div>
     </Panel>
   );

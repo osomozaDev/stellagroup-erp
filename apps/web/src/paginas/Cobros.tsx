@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, BellRing, CheckCircle2, History, Mail, Send } from 'lucide-react';
-import { asuntoFactura, mensajeFactura } from '@stella/shared';
+import { asuntoFactura, cambiarFirma, EnviarComo as Como, firmaCorreo, firmaUsuario, mensajeFactura } from '@stella/shared';
+import EnviarComo from '../components/EnviarComo';
 import { api, aBase64 } from '../lib/api';
 import { euros, fecha, nombreMes } from '../lib/formato';
 import {
@@ -327,10 +328,22 @@ function PanelRecordatorio({ factura, onCerrar }: { factura: any; onCerrar: () =
   const avisar = useAviso();
   const [v, setV] = useState({ para: '', mensaje: '' });
   const { data, isLoading } = useQuery({ queryKey: ['recordatorio', factura.id], queryFn: () => api(`/cobros/recordatorio/${factura.id}`) });
+  const { data: empresa } = useQuery({ queryKey: ['empresa'], queryFn: () => api('/empresa') });
   useEffect(() => { if (data) setV(data); }, [data]);
+  // El texto acaba con el nombre de la empresa: como usuario, firma la persona y debajo la empresa
+  const [como, setComo] = useState<Como>('empresa');
+  const firmaDe = (c: Como, nombre: string) => (c === 'usuario' ? `${nombre}\n${empresa?.nombre ?? ''}` : (empresa?.nombre ?? ''));
+  const [firma, setFirma] = useState<string | null>(null);
+  const cambiarComo = (c: Como, nombre: string) => {
+    const antes = firma ?? empresa?.nombre ?? '';
+    const despues = firmaDe(c, nombre);
+    setV((x) => ({ ...x, mensaje: cambiarFirma(x.mensaje, antes, despues) }));
+    setFirma(despues);
+    setComo(c);
+  };
 
   const enviar = useMutation({
-    mutationFn: () => api('/cobros/recordatorio', { method: 'POST', body: { factura_id: factura.id, ...v } }),
+    mutationFn: () => api('/cobros/recordatorio', { method: 'POST', body: { factura_id: factura.id, ...v, como } }),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ['cobros'] });
       avisar(r.modo === 'prueba' ? 'Recordatorio apuntado (modo prueba, no ha salido)' : 'Recordatorio enviado');
@@ -354,6 +367,7 @@ function PanelRecordatorio({ factura, onCerrar }: { factura: any; onCerrar: () =
           <Campo etiqueta="Mensaje">
             <AreaTexto rows={11} value={v.mensaje} onChange={(e) => setV({ ...v, mensaje: e.target.value })} />
           </Campo>
+          {empresa && <EnviarComo valor={como} empresa={empresa.nombre} onCambio={cambiarComo} />}
         </div>
       )}
     </Panel>
@@ -367,6 +381,16 @@ export function PanelEnviarFactura({ facturaId, onCerrar }: { facturaId: string;
   const avisar = useAviso();
   const { data: f, isLoading } = useQuery({ queryKey: ['factura', facturaId], queryFn: () => api(`/facturas/${facturaId}`) });
   const [v, setV] = useState({ para: '', asunto: '', mensaje: '' });
+  // Como usuario, el mensaje lo firma la persona («Omar / Stella Group») en vez de «El equipo de…»
+  const [como, setComo] = useState<Como>('empresa');
+  const [firma, setFirma] = useState<string | null>(null);
+  const cambiarComo = (c: Como, nombre: string) => {
+    const antes = firma ?? firmaCorreo(f.empresa);
+    const despues = c === 'usuario' ? firmaUsuario(nombre, f.empresa) : firmaCorreo(f.empresa);
+    setV((x) => ({ ...x, mensaje: cambiarFirma(x.mensaje, antes, despues) }));
+    setFirma(despues);
+    setComo(c);
+  };
 
   useEffect(() => {
     if (!f) return;
@@ -383,7 +407,7 @@ export function PanelEnviarFactura({ facturaId, onCerrar }: { facturaId: string;
       const pdf = await crearPdfFactura(f);
       return api('/cobros/enviar-factura', {
         method: 'POST',
-        body: { factura_id: f.id, ...v, pdf: await aBase64(pdf), nombre_pdf: pdf.name },
+        body: { factura_id: f.id, ...v, como, pdf: await aBase64(pdf), nombre_pdf: pdf.name },
       });
     },
     onSuccess: (r: any) => {
@@ -409,6 +433,7 @@ export function PanelEnviarFactura({ facturaId, onCerrar }: { facturaId: string;
           <Campo etiqueta="Asunto"><Entrada value={v.asunto} onChange={(e) => setV({ ...v, asunto: e.target.value })} /></Campo>
           <Campo etiqueta="Mensaje"><AreaTexto rows={7} value={v.mensaje} onChange={(e) => setV({ ...v, mensaje: e.target.value })} /></Campo>
           <p className="text-sm text-slate-500">Se adjunta la factura en PDF.</p>
+          <EnviarComo valor={como} empresa={f.empresa?.nombre ?? ''} onCambio={cambiarComo} />
         </div>
       )}
     </Panel>

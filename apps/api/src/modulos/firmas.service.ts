@@ -2,11 +2,12 @@ import { BadRequestException, ForbiddenException, GoneException, Inject, Injecta
 import { ConfigService } from '@nestjs/config';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { clienteDeTexto, EnviarFirmaInput, FirmarInput } from '@stella/shared';
+import { clienteDeTexto, EnviarFirmaInput, firmaCorreo, FirmarInput, firmaUsuario } from '@stella/shared';
 import { nombreArchivoPdf } from '@stella/pdf';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
 import { CorreoService } from '../comun/correo.service';
+import { Remitente } from '../comun/remitente';
 import { html, TelegramService } from '../comun/telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
 
@@ -105,7 +106,8 @@ export class FirmasService {
     if (firmas.some((f) => f.estado === 'pendiente')) throw new BadRequestException('Está pendiente de firma. Anula la petición de firma para poder cambiarlo.');
   }
 
-  async enviar(tipo: TipoDocumento, id: string, input: EnviarFirmaInput, quien: string | null) {
+  /** remitente: si lo envía una persona en su nombre (sale con su nombre y le contestan a ella); null = la empresa */
+  async enviar(tipo: TipoDocumento, id: string, input: EnviarFirmaInput, quien: string | null, remitente: Remitente | null = null) {
     const d = await this.documento(tipo, id);
     const editable = tipo === 'presupuesto' ? ['borrador', 'enviado'] : ['borrador', 'enviado', 'rechazado'];
     if (!editable.includes(d.estado)) throw new BadRequestException(`No se puede enviar a firmar un ${tipo} ${d.estado}`);
@@ -145,8 +147,14 @@ export class FirmasService {
     try {
       ({ modo } = await this.correo.enviarSimple({
         para: input.email,
-        asunto: `${d.empresa.nombre} te envía ${tipo === 'contrato' ? 'un contrato' : 'un presupuesto'} para firmar`,
-        parrafos: [saludo, ...(input.mensaje ? [input.mensaje] : []), `Te enviamos ${que} para que lo revises y, si estás de acuerdo, lo firmes desde el móvil o el ordenador. Solo te llevará un minuto.`],
+        asunto: `${remitente?.nombre ?? d.empresa.nombre} te envía ${tipo === 'contrato' ? 'un contrato' : 'un presupuesto'} para firmar`,
+        parrafos: [
+          saludo,
+          ...(input.mensaje ? [input.mensaje] : []),
+          `Te ${remitente ? 'envío' : 'enviamos'} ${que} para que lo revises y, si estás de acuerdo, lo firmes desde el móvil o el ordenador. Solo te llevará un minuto.`,
+          `Un saludo,\n${remitente ? firmaUsuario(remitente.nombre, d.empresa) : firmaCorreo(d.empresa)}`,
+        ],
+        remitente,
         boton: { texto: 'Revisar y firmar', url },
         nota: `El enlace es personal y vale hasta el ${new Date(firma.caduca).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}. Para firmar te enviaremos un código a este correo.`,
       }));

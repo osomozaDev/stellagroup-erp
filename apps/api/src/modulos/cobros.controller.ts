@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Inject, Injectable, Logger, Param, Patch, Post, Put, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Inject, Injectable, Logger, Param, Patch, Post, Put, Req, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import { Cron } from '@nestjs/schedule';
@@ -8,6 +8,8 @@ import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
 import { ok } from '../comun/db';
 import { CorreoService } from '../comun/correo.service';
+import { Remitente, remitenteDe } from '../comun/remitente';
+import { enviarComoSchema } from '@stella/shared';
 import { asuntoRecordatorio } from '../comun/plantilla-correo';
 import { Publico } from '../comun/publico.decorator';
 import { AvisosTelegramService } from './avisos-telegram.service';
@@ -35,12 +37,14 @@ const enviarFacturaSchema = z.object({
   mensaje: z.string().trim().min(1, 'Falta el mensaje'),
   pdf: z.string().min(100, 'Falta el PDF'),
   nombre_pdf: z.string().min(1),
+  como: enviarComoSchema,
 });
 
 const recordatorioSchema = z.object({
   factura_id: z.string().uuid(),
   para: correo,
   mensaje: z.string().trim().min(1, 'Falta el mensaje'),
+  como: enviarComoSchema,
 });
 
 const ajustesSchema = z.object({
@@ -82,8 +86,9 @@ export class CobrosService {
     return saludar(texto, factura.cliente?.contacto);
   }
 
-  async enviarRecordatorio(factura: any, para: string, texto: string, automatico = false) {
+  async enviarRecordatorio(factura: any, para: string, texto: string, automatico = false, remitente: Remitente | null = null) {
     return this.correo.enviar({
+      remitente,
       factura_id: factura.id,
       tipo: 'recordatorio',
       para,
@@ -164,14 +169,14 @@ export class CobrosController {
   }
 
   @Post('recordatorio')
-  async recordatorio(@Body(new ZodPipe(recordatorioSchema)) body: z.infer<typeof recordatorioSchema>) {
+  async recordatorio(@Body(new ZodPipe(recordatorioSchema)) body: z.infer<typeof recordatorioSchema>, @Req() req: any) {
     const f = ok(await this.db.from('facturas').select('id, numero, estado, total, vencimiento').eq('id', body.factura_id).single()) as any;
     if (f.estado !== 'emitida') throw new BadRequestException('Esta factura no está pendiente de cobro');
-    return this.cobros.enviarRecordatorio(f, body.para, body.mensaje);
+    return this.cobros.enviarRecordatorio(f, body.para, body.mensaje, false, await remitenteDe(this.db, req, body.como));
   }
 
   @Post('enviar-factura')
-  async enviarFactura(@Body(new ZodPipe(enviarFacturaSchema)) body: z.infer<typeof enviarFacturaSchema>) {
+  async enviarFactura(@Body(new ZodPipe(enviarFacturaSchema)) body: z.infer<typeof enviarFacturaSchema>, @Req() req: any) {
     const f = ok(await this.db.from('facturas').select('id, estado').eq('id', body.factura_id).single()) as any;
     if (f.estado === 'anulada') throw new BadRequestException('Esta factura está anulada');
     return this.correo.enviar({
@@ -181,6 +186,7 @@ export class CobrosController {
       asunto: body.asunto,
       texto: body.mensaje,
       adjunto: { nombre: body.nombre_pdf, base64: body.pdf },
+      remitente: await remitenteDe(this.db, req, body.como),
     });
   }
 

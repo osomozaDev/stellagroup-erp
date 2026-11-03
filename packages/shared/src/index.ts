@@ -367,6 +367,31 @@ export function bloquesContrato(cuerpo: string): BloqueContrato[] {
   return bloques;
 }
 
+// ───────────── Enviar como la empresa o como el usuario ─────────────
+
+/** empresa: sale con el nombre de la empresa · usuario: con el nombre de quien lo envía y se le contesta a él */
+export const ENVIAR_COMO = ['empresa', 'usuario'] as const;
+export type EnviarComo = (typeof ENVIAR_COMO)[number];
+export const enviarComoSchema = z.enum(ENVIAR_COMO).default('empresa');
+
+export const nombreUsuarioSchema = z.object({ nombre: z.string().trim().min(2, 'Escribe tu nombre').max(80) });
+
+/** Firma de un correo enviado por una persona: «Omar Somoza / Stella Group / Tel. …» */
+export function firmaUsuario(nombre: string, empresa: { nombre?: string | null; telefono?: string | null } | null | undefined) {
+  return [nombre, (empresa?.nombre ?? '').replace(/,?\s*(S\.?L\.?U?\.?|S\.?A\.?U?\.?)$/i, ''), empresa?.telefono ? `Tel. ${empresa.telefono}` : '']
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Cambia la firma al final de un texto ya escrito (al pasar de enviar como la empresa
+ * a enviar como el usuario o al revés). Si la persona ha tocado el final, no lo cambia.
+ */
+export function cambiarFirma(texto: string, de: string, a: string) {
+  const sinEspacios = texto.replace(/\s+$/, '');
+  return de && sinEspacios.endsWith(de) ? sinEspacios.slice(0, -de.length) + a : texto;
+}
+
 // ───────────── Firma electrónica ─────────────
 
 export const enviarFirmaSchema = z.object({
@@ -374,6 +399,7 @@ export const enviarFirmaSchema = z.object({
   nombre: texto,
   mensaje: texto,
   dias: z.coerce.number().int().min(1).max(90).default(30),
+  como: enviarComoSchema,
 });
 export type EnviarFirmaInput = z.infer<typeof enviarFirmaSchema>;
 

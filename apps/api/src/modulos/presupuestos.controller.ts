@@ -10,6 +10,7 @@ import { ZodPipe } from '../comun/zod.pipe';
 import { busqueda, ok } from '../comun/db';
 import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
+import { remitenteDe } from '../comun/remitente';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
@@ -194,8 +195,8 @@ export class PresupuestosController {
   }
 
   @Post(':id/firma')
-  enviarFirma(@Param('id') id: string, @Body(new ZodPipe(enviarFirmaSchema)) body: EnviarFirmaInput, @Req() req: any) {
-    return this.firmas.enviar('presupuesto', id, body, req.user?.email ?? null);
+  async enviarFirma(@Param('id') id: string, @Body(new ZodPipe(enviarFirmaSchema)) body: EnviarFirmaInput, @Req() req: any) {
+    return this.firmas.enviar('presupuesto', id, body, req.user?.email ?? null, await remitenteDe(this.db, req, body.como));
   }
 
   @Delete(':id/firma')

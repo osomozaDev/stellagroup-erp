@@ -7,6 +7,8 @@ export interface Yo {
   permisos: string[];
   email: string | null;
   nombre?: string | null;
+  /** true si el nombre lo ha puesto el propio usuario (no sale del correo ni de su ficha) */
+  nombre_propio?: boolean;
 }
 
 const PermisosCtx = createContext<Yo | null>(null);

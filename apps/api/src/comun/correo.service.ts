@@ -6,6 +6,7 @@ import { SUPABASE } from './supabase.module';
 import { ok } from './db';
 import { correoAcceso, correoHtml, correoSimple, correoTexto, DatosCorreo, documento, logoIncrustado, nombreSinForma } from './plantilla-correo';
 import { correosPortal, crearEnlacePortal, normalizarEmail } from './portal';
+import { Remitente } from './remitente';
 
 export interface Correo {
   factura_id: string;
@@ -15,6 +16,20 @@ export interface Correo {
   texto: string;
   adjunto?: { nombre: string; base64: string };
   automatico?: boolean;
+  /** Si lo envía una persona en su nombre: sale con su nombre y las respuestas le llegan a ella */
+  remitente?: Remitente | null;
+}
+
+/**
+ * Cabeceras de quién envía. La dirección siempre es la del correo de la empresa
+ * (el servidor solo deja enviar desde ella); lo que cambia es el nombre visible y a
+ * quién se contesta: «Omar · Stella Group», respuestas a omar@….
+ */
+function cabeceraRemitente(empresa: { nombre: string; email?: string | null }, direccion: string, remitente?: Remitente | null) {
+  return {
+    from: { name: remitente ? `${remitente.nombre} · ${nombreSinForma(empresa.nombre)}` : empresa.nombre, address: direccion },
+    replyTo: remitente?.email ?? empresa.email ?? undefined,
+  };
 }
 
 /**
@@ -110,6 +125,7 @@ export class CorreoService {
     destacado?: string;
     nota?: string;
     adjunto?: { nombre: string; contenido: Buffer };
+    remitente?: Remitente | null;
   }) {
     const empresa = ok(await this.db.from('empresa').select('nombre, email, cif, direccion, cp, ciudad, provincia, telefono, color, logo').eq('id', 1).single()) as any;
     if (!this.transporte) {
@@ -120,8 +136,7 @@ export class CorreoService {
     const { html, texto } = correoSimple(empresa, c, !!logo);
     await this.transporte
       .sendMail({
-        from: { name: empresa.nombre, address: this.remitente ?? empresa.email },
-        replyTo: empresa.email ?? undefined,
+        ...cabeceraRemitente(empresa, this.remitente ?? empresa.email, c.remitente),
         to: c.para,
         subject: c.asunto,
         text: texto,
@@ -171,8 +186,7 @@ export class CorreoService {
       };
       const info = await this.transporte
         .sendMail({
-          from: { name: empresa.nombre, address: this.remitente ?? empresa.email },
-          replyTo: empresa.email ?? undefined,
+          ...cabeceraRemitente(empresa, this.remitente ?? empresa.email, c.remitente),
           to: c.para,
           subject: c.asunto,
           text: correoTexto(datos),
