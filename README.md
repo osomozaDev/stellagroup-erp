@@ -57,10 +57,9 @@ Para ver en local los correos (facturas, peticiones de firma y códigos), usa el
 
 ## Producción
 
-Todavía no está publicado. Para hacerlo como ObraFácil:
-
-- **Web y API:** Vercel, con el `vercel.json` de este repositorio. El build (`build:vercel`) empaqueta la API en un único archivo que carga `api/index.mjs`.
-- **Base de datos:** un proyecto nuevo de Supabase. Las migraciones se aplican con `supabase link` + `supabase db push`.
-- **Variables en Vercel:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `WEB_URL`, `CRON_SECRET`, `ENABLE_EXPERIMENTAL_COREPACK=1`, para enviar correos `SMTP_*` y, para el bot, las de Telegram.
+- **Web y API:** Vercel, proyecto `stellagroup-erp` (equipo «omar's projects»): https://stellagroup-erp.vercel.app. El repositorio todavía no está conectado a Vercel, así que se publica con `npx vercel@50.4.5 deploy --prod`; para que cada push a `main` se publique solo, hay que dar acceso a este repositorio a la app de Vercel en GitHub y conectarlo en el proyecto.
+- **Base de datos:** Supabase, proyecto `stellagroup-erp` (París, organización avanzadi). Las migraciones se aplican con `supabase link --project-ref pzguyostcxbasjjkhnrn` + `supabase db push`, y los ajustes de inicio de sesión (sin registro libre) con `supabase config push` (sección `[remotes.production]` de `supabase/config.toml`).
+- **Variables en Vercel:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `WEB_URL`, `CRON_SECRET`, `ENABLE_EXPERIMENTAL_COREPACK=1`. Faltan `SMTP_*` para que salgan los correos (facturas, recordatorios y firmas) y las de Telegram para el bot.
+- **API en Vercel:** el build (`build:vercel`) empaqueta la API en un único archivo que carga `api/index.mjs`.
 - **Recordatorios y avisos:** Vercel Cron llama cada día a `/api/cron/recordatorios`.
-- **Usuarios:** el registro libre está desactivado; se crean con `pnpm crear-usuario correo@empresa.es --prod`.
+- **Usuarios:** el registro libre está desactivado; el primer administrador se crea con `pnpm crear-usuario correo@empresa.es --prod` (usa `PROD_SUPABASE_URL` y `PROD_SUPABASE_SERVICE_ROLE_KEY` de `.env`) y el resto desde la app, en Usuarios.
