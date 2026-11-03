@@ -50,7 +50,7 @@ const GRUPOS = [
 const grupoDe = (unidad: string) => (unidad === 'mes' ? 'mensual' : unidad === 'año' ? 'anual' : 'unico');
 
 /** Estrella de cuatro puntas del logotipo */
-const Estrella = ({ tam = 11 }: { tam?: number }) => (
+export const Estrella = ({ tam = 11 }: { tam?: number }) => (
   <Svg width={tam} height={tam} viewBox="0 0 24 24">
     <Path d="M12 0 C13 8 16 11 24 12 C16 13 13 16 12 24 C11 16 8 13 0 12 C8 11 11 8 12 0 Z" fill={oro} />
   </Svg>

@@ -1,7 +1,7 @@
 import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer';
 import { bloquesContrato, ParteTexto } from '@stella/shared';
 import { aclarar, euros, fecha, fechaHora, nombreMes, num } from './formato';
-import { PresupuestoPdf } from './presupuesto';
+import { Estrella, PresupuestoPdf } from './presupuesto';
 
 /**
  * Plantilla del PDF de las facturas y los presupuestos. La usan la web (descargar,
@@ -226,8 +226,18 @@ export function ContratoPdf({ c }: { c: any }) {
       <Page size="A4" style={s.pagina}>
         <View style={[s.fila, { justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 }]} fixed>
           <View style={{ maxWidth: 300 }}>
-            {e.logo && <Image src={e.logo} style={{ height: 40, maxWidth: 200, objectFit: 'contain', objectPositionX: 0, marginBottom: 6 }} />}
-            <Text style={[s.fuerte, { fontSize: 9.5 }]}>{e.nombre}</Text>
+            {/* Sin logo subido, el de Stella: la estrella y el nombre en serifa, como en el presupuesto */}
+            {e.logo ? (
+              <>
+                <Image src={e.logo} style={{ height: 40, maxWidth: 200, objectFit: 'contain', objectPositionX: 0, marginBottom: 6 }} />
+                <Text style={[s.fuerte, { fontSize: 9.5 }]}>{e.nombre}</Text>
+              </>
+            ) : (
+              <View style={[s.fila, { alignItems: 'center', gap: 6 }]}>
+                <Estrella tam={13} />
+                <Text style={{ fontFamily: 'Fraunces', fontWeight: 600, fontSize: 17 }}>{e.nombre}</Text>
+              </View>
+            )}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 13, fontWeight: 700, color }}>Contrato</Text>
