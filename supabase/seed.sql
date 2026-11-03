@@ -185,3 +185,17 @@ insert into empleados (nombre, apellidos, dni, nss, puesto, telefono, email, fec
   ('Marta', 'Soler Gil', '33333333P', '28/33333333/33', 'Diseñador/a UX/UI', '600 300 300', 'marta@stella.com', '2023-04-17', 32000, 14, 14, 26, 'a1111111-1111-4111-8111-111111111111'),
   ('Pablo', 'Ferrer Navarro', '44444444A', '28/44444444/44', 'Especialista en IA', '600 400 400', 'pablo@stella.com', '2024-09-02', 38000, 14, 16, 31, 'a4444444-4444-4444-8444-444444444444'),
   ('Irene', 'Castro Molina', '55555555K', '28/55555555/55', 'Administración', '600 500 500', 'irene@stella.com', '2022-06-01', 26000, 14, 11, 21, null);
+
+-- ───────────── Catálogo de productos y servicios ─────────────
+insert into catalogo (tipo, categoria, nombre, descripcion, unidad, precio, coste) values
+  ('servicio', 'Web', 'Web corporativa', E'Diseño a medida, hasta 6 páginas, blog y formulario de contacto.\nAdaptada a móvil y con SEO básico.', 'ud', 2400, null),
+  ('servicio', 'Web', 'Tienda online', E'Catálogo, carrito, pasarela de pago (Redsys y Bizum) y gestión de envíos.', 'ud', 5600, null),
+  ('servicio', 'Diseño', 'Diseño UX/UI', E'Investigación, wireframes, prototipo navegable y diseño final.', 'ud', 1800, null),
+  ('servicio', 'Desarrollo', 'Hora de desarrollo', 'Desarrollo de software a medida.', 'h', 55, 29),
+  ('servicio', 'Desarrollo', 'Integración con API externa', E'Conexión con CRM, ERP o pasarela de terceros, con pruebas y documentación.', 'ud', 1200, null),
+  ('servicio', 'Inteligencia artificial', 'Asistente de IA', E'Chatbot entrenado con la información de la empresa para la web y WhatsApp.', 'ud', 3500, null),
+  ('servicio', 'SEO', 'Auditoría SEO técnica', E'Rendimiento, Core Web Vitals, indexación y plan de mejoras priorizado.', 'ud', 650, null),
+  ('servicio', 'Mantenimiento', 'Mantenimiento web mensual', E'Actualizaciones, copias de seguridad, vigilancia y soporte por correo.', 'mes', 120, null),
+  ('producto', 'Hosting', 'Hosting gestionado', 'Servidor con copias diarias y certificado SSL.', 'mes', 39, 12),
+  ('producto', 'Dominios', 'Dominio .es', 'Registro o renovación anual.', 'ud', 25, 11),
+  ('producto', 'Licencias', 'Licencia de plugin premium', 'Licencia anual con actualizaciones.', 'ud', 89, 59);

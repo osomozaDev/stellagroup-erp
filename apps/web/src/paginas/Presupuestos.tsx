@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
-import { calcularTotales, EstadoPresupuesto, TIPOS_PROYECTO } from '@stella/shared';
+import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
+import { calcularTotales, EstadoPresupuesto, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
+import { ElegirDelCatalogo } from './Catalogo';
 import { api, descargar } from '../lib/api';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
 import {
@@ -308,6 +309,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
   // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano
   const [aMano, setAMano] = useState<'lista' | 'texto'>(presupuesto && !presupuesto.cliente_id ? 'texto' : 'lista');
+  const [catalogo, setCatalogo] = useState(false);
   const cambiarLinea = (i: number, k: keyof Linea, valor: string) => setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: valor } : l)));
   const t = calcularTotales(lineas.map((l) => ({ cantidad: Number(l.cantidad) || 0, precio: Number(l.precio) || 0 })), Number(v.iva_pct) || 0, Number(v.retencion_pct) || 0);
 
@@ -392,21 +394,28 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
                   <Campo etiqueta="Cantidad"><Entrada type="number" inputMode="decimal" step="0.01" value={l.cantidad} onChange={(e) => cambiarLinea(i, 'cantidad', e.target.value)} /></Campo>
                   <Campo etiqueta="Unidad">
                     <Selector value={l.unidad} onChange={(e) => cambiarLinea(i, 'unidad', e.target.value)}>
-                      <option value="ud">unidades</option>
-                      <option value="h">horas</option>
-                      <option value="pa">partida</option>
-                      <option value="mes">meses</option>
+                      {UNIDADES.map((u) => <option key={u.clave} value={u.clave}>{u.nombre}</option>)}
                     </Selector>
                   </Campo>
                   <Campo etiqueta="Precio €"><Entrada type="number" inputMode="decimal" step="0.01" value={l.precio} onChange={(e) => cambiarLinea(i, 'precio', e.target.value)} /></Campo>
                 </div>
               </div>
             ))}
-            <Boton variante="fantasma" icono={<Plus className="size-4" />} onClick={() => setLineas((ls) => [...ls, { concepto: '', cantidad: 1, unidad: 'ud', precio: 0 }])}>
-              Añadir partida
-            </Boton>
+            <div className="flex flex-wrap gap-2">
+              <Boton variante="secundario" icono={<Package className="size-4" />} onClick={() => setCatalogo(true)}>Añadir del catálogo</Boton>
+              <Boton variante="fantasma" icono={<Plus className="size-4" />} onClick={() => setLineas((ls) => [...ls, { concepto: '', cantidad: 1, unidad: 'ud', precio: 0 }])}>
+                Añadir partida
+              </Boton>
+            </div>
           </div>
         </div>
+        {catalogo && (
+          <ElegirDelCatalogo
+            onCerrar={() => setCatalogo(false)}
+            // La partida vacía con la que empieza un presupuesto nuevo se sustituye por la primera elegida
+            onElegir={(c) => setLineas((ls) => [...ls.filter((l) => l.concepto.trim() || Number(l.precio)), lineaDeCatalogo(c)])}
+          />
+        )}
 
         <div className="grid sm:grid-cols-2 gap-4">
           <Campo etiqueta="IVA %"><Entrada type="number" inputMode="decimal" value={v.iva_pct} onChange={(e) => poner('iva_pct', e.target.value)} /></Campo>

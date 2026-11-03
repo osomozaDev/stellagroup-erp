@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Check, Copy, KeyRound, Plus, Send, Share2, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
-import { PERMISOS } from '@stella/shared';
+import { PERMISOS, PUESTOS } from '@stella/shared';
 import { api } from '../lib/api';
 import { fecha, nombreCompleto } from '../lib/formato';
 import {
@@ -18,7 +18,7 @@ type Usuario = {
 };
 
 const colorRol = { admin: 'azul', oficina: 'gris', trabajador: 'naranja' } as const;
-export const textoTipoRol = { admin: 'Ve y gestiona todo', oficina: 'Ve los módulos marcados', trabajador: 'Solo su proyecto, documentación y nóminas' };
+export const textoTipoRol = { admin: 'Ve y gestiona todo', oficina: 'Ve los módulos marcados', trabajador: 'Solo su proyecto y sus nóminas' };
 
 /** Contraseña inicial sin letras que se confunden (l, 1, O, 0) para poder dictarla */
 export function contrasenaAleatoria() {
@@ -64,7 +64,7 @@ function ListaUsuarios() {
                     {u.soy_yo && <span className="ml-2 text-xs font-normal text-slate-500">(tú)</span>}
                   </p>
                   <p className="truncate text-sm text-slate-500">
-                    {u.empleado ? u.email : 'Sin ficha de empleado'}
+                    {u.empleado ? `${u.email}${u.empleado.puesto ? ` · ${u.empleado.puesto}` : ''}` : 'Sin vincular a ningún empleado'}
                     {' · '}
                     {u.ultimo_acceso ? `entró el ${fecha(u.ultimo_acceso)}` : 'todavía no ha entrado'}
                   </p>
@@ -93,6 +93,8 @@ export function FormularioUsuario({ usuario, empleadoId, emailInicial, onCerrar 
   const [clave, setClave] = useState(usuario ? '' : contrasenaAleatoria());
   const [rolId, setRolId] = useState(usuario?.rol?.id ?? '');
   const [empleado, setEmpleado] = useState(usuario?.empleado?.id ?? empleadoId ?? '');
+  // «nueva»: se crea la ficha de empleado a la vez que se guarda el usuario
+  const [ficha, setFicha] = useState({ nombre: '', apellidos: '', puesto: '' });
   const [personalizar, setPersonalizar] = useState(!!usuario?.permisos);
   const [permisos, setPermisos] = useState<string[]>(usuario?.permisos ?? usuario?.rol?.permisos ?? []);
   const [borrar, setBorrar] = useState(false);
@@ -110,8 +112,17 @@ export function FormularioUsuario({ usuario, empleadoId, emailInicial, onCerrar 
   const alternar = (clave: string) => setPermisos((ps) => (ps.includes(clave) ? ps.filter((p) => p !== clave) : [...ps, clave]));
 
   const guardar = useMutation({
-    mutationFn: () => {
-      const datos = { rol_id: rol?.id, empleado_id: empleado || null, permisos: rol?.tipo === 'oficina' && personalizar ? permisos : null };
+    mutationFn: async () => {
+      let empleadoId = empleado === 'nueva' ? null : empleado || null;
+      if (empleado === 'nueva') {
+        if (ficha.nombre.trim().length < 2) throw new Error('Escribe el nombre de la persona para crear su ficha');
+        const e = await api<any>('/empleados', {
+          method: 'POST',
+          body: { ...ficha, email: usuario?.email ?? email, activo: true, salario_bruto_anual: 0, irpf_pct: 0, pagas: 14 },
+        });
+        empleadoId = e.id;
+      }
+      const datos = { rol_id: rol?.id, empleado_id: empleadoId, permisos: rol?.tipo === 'oficina' && personalizar ? permisos : null };
       return usuario
         ? api(`/usuarios/${usuario.id}`, { method: 'PATCH', body: datos })
         : api('/usuarios', { method: 'POST', body: { ...datos, email, password: clave } });
@@ -158,14 +169,31 @@ export function FormularioUsuario({ usuario, empleadoId, emailInicial, onCerrar 
           </Selector>
         </Campo>
 
-        <Campo etiqueta="Ficha de empleado" ayuda={rol?.tipo === 'trabajador' ? 'Obligatoria: es lo que verá en su portal.' : 'Opcional: para saber quién es cada usuario.'}>
-          <Selector value={empleado} onChange={(e) => setEmpleado(e.target.value)} disabled={!!empleadoId}>
-            <option value="">Sin vincular</option>
-            {empleados?.filter((e) => !ocupados.has(e.id) || e.id === empleado).map((e) => (
-              <option key={e.id} value={e.id}>{nombreCompleto(e)}{e.puesto ? ` · ${e.puesto}` : ''}{e.activo ? '' : ' (de baja)'}</option>
-            ))}
-          </Selector>
-        </Campo>
+        <div className="space-y-3">
+          <Campo
+            etiqueta="Empleado"
+            ayuda={rol?.tipo === 'trabajador' ? 'Obligatorio: es lo que verá en su portal.' : 'Para saber quién es cada usuario: su nombre sale en la app y en los correos que envía.'}
+          >
+            <Selector value={empleado} onChange={(e) => setEmpleado(e.target.value)} disabled={!!empleadoId}>
+              <option value="">Sin vincular</option>
+              {empleados?.filter((e) => !ocupados.has(e.id) || e.id === empleado).map((e) => (
+                <option key={e.id} value={e.id}>{nombreCompleto(e)}{e.puesto ? ` · ${e.puesto}` : ''}{e.activo ? '' : ' (de baja)'}</option>
+              ))}
+              {!empleadoId && <option value="nueva">+ Crear su ficha de empleado…</option>}
+            </Selector>
+          </Campo>
+          {empleado === 'nueva' && (
+            <div className="grid sm:grid-cols-2 gap-3 rounded-2xl border border-marca-100 bg-marca-50/50 p-4">
+              <Campo etiqueta="Nombre"><Entrada value={ficha.nombre} onChange={(e) => setFicha({ ...ficha, nombre: e.target.value })} /></Campo>
+              <Campo etiqueta="Apellidos"><Entrada value={ficha.apellidos} onChange={(e) => setFicha({ ...ficha, apellidos: e.target.value })} /></Campo>
+              <Campo etiqueta="Puesto" className="sm:col-span-2">
+                <Entrada value={ficha.puesto} onChange={(e) => setFicha({ ...ficha, puesto: e.target.value })} list="puestos-usuario" placeholder="Comercial, Desarrollador/a…" />
+                <datalist id="puestos-usuario">{PUESTOS.map((p) => <option key={p} value={p} />)}</datalist>
+              </Campo>
+              <p className="sm:col-span-2 text-xs text-slate-500">El sueldo y el resto de datos se completan luego en Equipo.</p>
+            </div>
+          )}
+        </div>
 
         {rol?.tipo === 'oficina' && (
           <div className="space-y-3">

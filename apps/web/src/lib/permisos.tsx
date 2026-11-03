@@ -34,6 +34,7 @@ export const PERMISO_DE_PAGINA: [string, string][] = [
   ['/nominas', 'nominas'],
   ['/presupuestos', 'presupuestos'],
   ['/contratos', 'contratos'],
+  ['/catalogo', 'presupuestos'],
   ['/servicios', 'servicios'],
   ['/cobros', 'cobros'],
   ['/gestoria', 'gestoria'],

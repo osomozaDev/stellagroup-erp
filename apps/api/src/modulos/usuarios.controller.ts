@@ -171,8 +171,12 @@ export class UsuariosController {
 
   @Get('roles')
   async roles() {
-    const roles = ok(await this.db.from('roles').select('*, perfiles(count)').order('created_at')) as any[];
-    return roles.map(({ perfiles, ...r }) => ({ ...r, usuarios: perfiles?.[0]?.count ?? 0 }));
+    const roles = ok(await this.db.from('roles').select('*, perfiles(count)').order('nombre')) as any[];
+    // Primero los que lo ven todo, luego los de oficina por nombre y al final Trabajador
+    const orden = { admin: 0, oficina: 1, trabajador: 2 } as Record<string, number>;
+    return roles
+      .sort((a, b) => orden[a.tipo] - orden[b.tipo] || Number(b.sistema) - Number(a.sistema) || a.nombre.localeCompare(b.nombre, 'es'))
+      .map(({ perfiles, ...r }) => ({ ...r, usuarios: perfiles?.[0]?.count ?? 0 }));
   }
 
   @Post('roles')

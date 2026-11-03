@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Briefcase, CalendarPlus, ExternalLink, FileSignature, FileText, ScrollText, FolderKanban, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
+  Briefcase, CalendarPlus, ExternalLink, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -17,6 +17,7 @@ const menu = [
   { a: '/proyectos', texto: 'Proyectos', icono: FolderKanban },
   { a: '/presupuestos', texto: 'Presupuestos', icono: FileSignature },
   { a: '/contratos', texto: 'Contratos', icono: ScrollText },
+  { a: '/catalogo', texto: 'Catálogo', icono: Package },
   { a: '/servicios', texto: 'Servicios', icono: RefreshCw },
   { a: '/cobros', texto: 'Cobros', icono: HandCoins },
   { a: '/empleados', texto: 'Equipo', icono: UserRound },

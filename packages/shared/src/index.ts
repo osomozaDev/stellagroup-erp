@@ -263,6 +263,41 @@ export const aceptarPresupuestoSchema = z.object({
 });
 export type AceptarPresupuestoInput = z.infer<typeof aceptarPresupuestoSchema>;
 
+// ───────────── Catálogo de productos y servicios ─────────────
+
+export const TIPOS_CATALOGO = [
+  { clave: 'servicio', nombre: 'Servicio' },
+  { clave: 'producto', nombre: 'Producto' },
+] as const;
+
+export const UNIDADES = [
+  { clave: 'ud', nombre: 'unidades' },
+  { clave: 'h', nombre: 'horas' },
+  { clave: 'pa', nombre: 'partida' },
+  { clave: 'mes', nombre: 'meses' },
+  { clave: 'año', nombre: 'años' },
+] as const;
+
+export const catalogoSchema = z.object({
+  tipo: z.enum(['servicio', 'producto']).default('servicio'),
+  nombre: z.string().trim().min(1, 'Escribe el nombre'),
+  descripcion: texto,
+  categoria: texto,
+  unidad: z.string().trim().min(1).default('ud'),
+  precio: numero.min(0, 'El precio no puede ser negativo'),
+  coste: z.coerce.number().min(0).optional().nullable(),
+  activo: z.coerce.boolean().default(true),
+});
+export type CatalogoInput = z.infer<typeof catalogoSchema>;
+
+/** Línea de presupuesto o factura a partir de un elemento del catálogo: el nombre y, debajo, la descripción */
+export const lineaDeCatalogo = (c: { nombre: string; descripcion?: string | null; unidad: string; precio: number | string }, cantidad = 1) => ({
+  concepto: c.descripcion ? `${c.nombre}\n${c.descripcion}` : c.nombre,
+  cantidad,
+  unidad: c.unidad,
+  precio: Number(c.precio),
+});
+
 // ───────────── Contratos ─────────────
 
 export const ESTADOS_CONTRATO = ['borrador', 'enviado', 'firmado', 'rechazado', 'anulado'] as const;
@@ -499,6 +534,13 @@ export const empleadoSchema = z.object({
 export type EmpleadoInput = z.infer<typeof empleadoSchema>;
 
 export const PUESTOS = [
+  'CEO',
+  'Director/a comercial',
+  'Comercial',
+  'Director/a de operaciones',
+  'Marketing',
+  'Soporte técnico',
+  'Recursos humanos',
   'Desarrollador/a full stack',
   'Desarrollador/a frontend',
   'Desarrollador/a backend',
@@ -624,6 +666,7 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
   proyectos: 'proyectos',
   hitos: 'proyectos',
   presupuestos: 'presupuestos',
+  catalogo: 'presupuestos',
   contratos: 'contratos',
   'plantillas-contrato': 'contratos',
   servicios: 'servicios',

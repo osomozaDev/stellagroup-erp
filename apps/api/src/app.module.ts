@@ -18,6 +18,7 @@ import { GestoriaController } from './modulos/gestoria.controller';
 import { CobrosController, CobrosService, CronController } from './modulos/cobros.controller';
 import { CorreoService } from './comun/correo.service';
 import { PresupuestosController } from './modulos/presupuestos.controller';
+import { CatalogoController } from './modulos/catalogo.controller';
 import { ContratosController, PlantillasContratoController } from './modulos/contratos.controller';
 import { FirmarController } from './modulos/firmar.controller';
 import { FirmasService } from './modulos/firmas.service';
@@ -48,6 +49,7 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     CobrosController,
     CronController,
     PresupuestosController,
+    CatalogoController,
     ContratosController,
     PlantillasContratoController,
     FirmarController,
