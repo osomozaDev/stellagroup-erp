@@ -48,12 +48,14 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Tras publicar una versión nueva, el webhook puede tener una configuración vieja
-   * (p. ej. sin botones): se comprueba al arrancar y se corrige si hace falta.
+   * (p. ej. sin botones o sin las órdenes nuevas): se comprueba al arrancar y se corrige si hace falta.
    */
   onModuleInit() {
     if (!this.token || !this.web.startsWith('https://')) return;
-    this.llamar<{ url: string; allowed_updates?: string[] }>('getWebhookInfo')
-      .then((w) => (w.url && !w.allowed_updates?.includes('callback_query') ? this.activarWebhook() : undefined))
+    Promise.all([this.llamar<{ url: string; allowed_updates?: string[] }>('getWebhookInfo'), this.llamar<{ command: string }[]>('getMyCommands')])
+      .then(([w, ordenes]) =>
+        w.url && (!w.allowed_updates?.includes('callback_query') || !ordenes.some((o) => o.command === 'presupuesto')) ? this.activarWebhook() : undefined,
+      )
       .catch((e) => this.log.error(`No se ha podido revisar el webhook: ${e.message}`));
   }
 
@@ -161,6 +163,8 @@ export class TelegramService implements OnModuleInit {
     await this.llamar('setMyCommands', {
       commands: [
         { command: 'menu', description: 'Botones con todo lo que puedes hacer' },
+        { command: 'presupuesto', description: 'Hacer un presupuesto y pasarlo a contrato' },
+        { command: 'nuevocliente', description: 'Dar de alta un cliente' },
         { command: 'facturar', description: 'Facturar el mes y mandarlo a los clientes' },
         { command: 'resumen', description: 'Lo que te deben y lo vencido' },
         { command: 'pendientes', description: 'Facturas sin cobrar' },

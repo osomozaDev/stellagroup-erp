@@ -95,7 +95,8 @@ export class PresupuestosController {
     }
     const numero = ok(await this.db.rpc('siguiente_numero_presupuesto', { p_anio: anio })) as string;
     const p = ok(await this.db.from('presupuestos').insert({ ...cabecera, numero, anio }).select().single()) as any;
-    ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: p.id }))));
+    // Desde Telegram se empieza sin partidas y se van añadiendo
+    if (lineas.length) ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: p.id }))));
     return p;
   }
 
@@ -107,7 +108,7 @@ export class PresupuestosController {
     const { cabecera, lineas } = this.filas(body);
     const p = ok(await this.db.from('presupuestos').update(cabecera).eq('id', id).select().single());
     ok(await this.db.from('presupuesto_lineas').delete().eq('presupuesto_id', id));
-    ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: id }))));
+    if (lineas.length) ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: id }))));
     return p;
   }
 

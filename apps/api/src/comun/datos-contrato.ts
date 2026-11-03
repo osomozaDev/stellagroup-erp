@@ -161,3 +161,27 @@ export async function completarDatos(
   ok(await db.from('contratos').update({ cuerpo, updated_at: new Date().toISOString() }).eq('id', contratoId));
   return { faltan: marcadores(cuerpo).length };
 }
+
+/**
+ * Para preguntar los datos de uno en uno (desde Telegram): en qué ficha se guarda un dato
+ * que falta (solo si es un único campo) y cómo se llama. Lo demás va solo al contrato.
+ */
+export function destinoDato(marcador: string): { entidad: Entidad | null; campo: string | null; etiqueta: string } {
+  const clave = claveDe(marcador);
+  const destino = clave ? MAPA[clave] : undefined;
+  if (!destino) return { entidad: null, campo: null, etiqueta: etiquetaLibre(marcador) };
+  const [entidad, campos] = destino;
+  const de = entidad === 'empresa' ? 'de Mi empresa' : `del ${entidad}`;
+  if (campos.length > 1) return { entidad: null, campo: null, etiqueta: `Dirección completa ${de}` };
+  return { entidad, campo: campos[0].campo, etiqueta: `${campos[0].etiqueta} ${de}` };
+}
+
+/** Guarda un dato que falta: en su ficha si se puede, si no solo en el contrato */
+export async function completarUnDato(db: SupabaseClient, contratoId: string, perfil: any, marcador: string, valor: string) {
+  const c = ok(await db.from('contratos').select('proyecto_id').eq('id', contratoId).single()) as any;
+  const d = destinoDato(marcador);
+  const enFicha = d.entidad && d.campo && (d.entidad !== 'proyecto' || c.proyecto_id) && puede(perfil, d.entidad);
+  return completarDatos(db, contratoId, perfil, enFicha ? { [d.entidad!]: { [d.campo!]: valor } } : { libres: { [marcador]: valor } });
+}
+
+export const marcadoresDe = marcadores;

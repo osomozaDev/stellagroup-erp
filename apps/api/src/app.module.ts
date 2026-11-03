@@ -28,6 +28,7 @@ import { TelegramService } from './comun/telegram.service';
 import { TelegramController } from './modulos/telegram.controller';
 import { AvisosTelegramService } from './modulos/avisos-telegram.service';
 import { BotTelegramService } from './modulos/bot-telegram.service';
+import { PresupuestosTelegramService } from './modulos/presupuestos-telegram.service';
 import { PortalClientesController } from './modulos/portal-clientes.controller';
 import { EnvioFacturaService } from './modulos/envio-factura.service';
 import { FacturarTelegramService } from './modulos/facturar-telegram.service';
@@ -57,6 +58,6 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     AvisosCorreoController,
     TelegramController,
   ],
-  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, FirmasService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, FirmasService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, PresupuestosTelegramService, { provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AppModule {}

@@ -10,10 +10,13 @@ import { FacturasService } from './facturas.service';
 import { CobrosService } from './cobros.controller';
 import { FacturarTelegramService, PREGUNTA_HORAS } from './facturar-telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
+import { PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_NUEVO_CLIENTE, PREGUNTAS, PresupuestosTelegramService } from './presupuestos-telegram.service';
 
 const AYUDA = [
   '/menu · botones con todo lo que puedes hacer',
   '/facturar · facturar el mes y mandarlo a los clientes',
+  '/nuevocliente · dar de alta un cliente',
+  '/presupuesto nombre · hacer un presupuesto, mandarlo, pasarlo a contrato y enviarlo a firmar',
   '/resumen · lo que te deben',
   '/pendientes · facturas sin cobrar',
   '/facturas · todas las facturas, de la más nueva a la más antigua',
@@ -38,6 +41,7 @@ const ESTADO_ENVIO: Record<string, string> = { enviado: 'enviado', entregado: '�
 interface Quien {
   usuario_id: string;
   nombre: string | null;
+  tipo: string;
   permisos: string[];
 }
 
@@ -57,6 +61,7 @@ export class BotTelegramService {
     private readonly cobros: CobrosService,
     private readonly facturar: FacturarTelegramService,
     private readonly envio: EnvioFacturaService,
+    private readonly presupuestos: PresupuestosTelegramService,
   ) {}
 
   /** Usuario conectado a este chat, con sus permisos (null si el chat no está conectado o ya no tiene acceso) */
@@ -65,7 +70,7 @@ export class BotTelegramService {
     if (!chat) return null;
     const cargado = await cargarPerfil(this.db, chat.usuario_id);
     if (!cargado || cargado.perfil.tipo === 'trabajador') return null;
-    return { usuario_id: chat.usuario_id, nombre: chat.nombre, permisos: cargado.perfil.permisos };
+    return { usuario_id: chat.usuario_id, nombre: chat.nombre, tipo: cargado.perfil.tipo, permisos: cargado.perfil.permisos };
   }
 
   private puede(q: Quien, metodo: string, ruta: string) {
@@ -84,6 +89,12 @@ export class BotTelegramService {
       const q = await this.quien(chatId);
       if (!q) return;
       return this.facturar.contestarHoras(chatId, texto, respuesta, (m, r) => this.puede(q, m, r));
+    }
+    // Respuestas al alta de cliente, al presupuesto (cliente y partidas) y al contrato
+    if (!texto.startsWith('/') && respondeA && PREGUNTAS.some((p) => respondeA.startsWith(p))) {
+      const q = await this.quien(chatId);
+      if (!q) return;
+      return this.presupuestos.contestar(chatId, texto, respondeA, (m, r) => this.puede(q, m, r), q);
     }
     // Respuesta a «Escribe el nombre…»: se trata como la orden de buscar. Cualquier otro texto suelto enseña el menú
     if (!texto.startsWith('/')) {
@@ -110,6 +121,12 @@ export class BotTelegramService {
       case '/facturar':
         if (!this.puede(q, 'POST', '/facturas/facturar-mes')) return this.telegram.enviar(chatId, 'No tienes permiso para facturar.');
         return this.facturar.elegirMes(chatId);
+      case '/nuevocliente':
+        if (!this.puede(q, 'POST', '/clientes')) return this.telegram.enviar(chatId, 'No tienes permiso para crear clientes.');
+        return argumento ? this.presupuestos.contestar(chatId, argumento, PREGUNTA_NUEVO_CLIENTE, (m, r) => this.puede(q, m, r), q) : this.presupuestos.pedirCliente(chatId);
+      case '/presupuesto':
+        if (!this.puede(q, 'POST', '/presupuestos')) return this.telegram.enviar(chatId, 'No tienes permiso para hacer presupuestos.');
+        return argumento ? this.presupuestos.contestar(chatId, argumento, PREGUNTA_CLIENTE_PRESUPUESTO, (m, r) => this.puede(q, m, r), q) : this.presupuestos.pedirClientePresupuesto(chatId);
       case '/resumen':
         return this.telegram.enviar(chatId, await this.avisos.textoResumen(), [[this.telegram.abrir('Abrir cobros', '/cobros')]]);
       case '/pendientes':
@@ -137,6 +154,10 @@ export class BotTelegramService {
   /** Botones con todo lo que se puede hacer, según los permisos de cada uno */
   private menu(chatId: number, q: Quien) {
     const filas: Botones = [];
+    const nuevo = [];
+    if (this.puede(q, 'POST', '/presupuestos')) nuevo.push({ text: '📝 Nuevo presupuesto', callback_data: 'm:presupuesto' });
+    if (this.puede(q, 'POST', '/clientes')) nuevo.push({ text: '👤 Nuevo cliente', callback_data: 'm:nuevocliente' });
+    if (nuevo.length) filas.push(nuevo);
     if (this.puede(q, 'POST', '/facturas/facturar-mes')) filas.push([{ text: '🧾 Facturar el mes', callback_data: 'm:facturar' }]);
     if (this.puede(q, 'GET', '/cobros')) {
       filas.push([{ text: '📊 Resumen', callback_data: 'm:resumen' }, { text: '🧾 Sin cobrar', callback_data: 'm:pendientes' }]);
@@ -218,7 +239,7 @@ export class BotTelegramService {
         }
       }
     }
-    return this.telegram.enviar(chatId, lineas.join('\n'), [[this.telegram.abrir('Abrir cliente', `/clientes/${id}`)]]);
+    return this.telegram.enviar(chatId, lineas.join('\n'), this.presupuestos.botonesCliente(id, (m, r) => this.puede(q, m, r)));
   }
 
   private async verFactura(chatId: number, q: Quien, numero: string) {
@@ -377,7 +398,7 @@ export class BotTelegramService {
   async boton(cb: any) {
     const chatId: number | undefined = cb.message?.chat?.id;
     const mensajeId: number | undefined = cb.message?.message_id;
-    const [accion, id] = String(cb.data ?? '').split(':');
+    const [accion, id, extra] = String(cb.data ?? '').split(':');
     if (!chatId || !mensajeId || !id) return this.telegram.responderBoton(cb.id);
     const q = await this.quien(chatId);
     if (!q) return this.telegram.responderBoton(cb.id, 'Este chat ya no está conectado a la app', true);
@@ -390,6 +411,9 @@ export class BotTelegramService {
         const r = await this.facturar.boton(accion, id, chatId, mensajeId, quien, (m, ruta) => this.puede(q, m, ruta), (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
         if (r !== false) return r;
       }
+      if (this.presupuestos.esSuya(accion)) {
+        return await this.presupuestos.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), q, (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
+      }
       switch (accion) {
         case 'm': {
           await this.telegram.responderBoton(cb.id);
@@ -401,6 +425,8 @@ export class BotTelegramService {
           if (id === 'cliente') return this.preguntar(chatId, PREGUNTA_CLIENTE);
           if (id === 'proyecto') return this.preguntar(chatId, PREGUNTA_PROYECTO);
           if (id === 'renovaciones') return this.renovaciones(chatId, q);
+          if (id === 'nuevocliente') return this.puede(q, 'POST', '/clientes') ? this.presupuestos.pedirCliente(chatId) : sinPermiso();
+          if (id === 'presupuesto') return this.puede(q, 'POST', '/presupuestos') ? this.presupuestos.pedirClientePresupuesto(chatId) : sinPermiso();
           return;
         }
 
