@@ -23,11 +23,16 @@ import Cobros from './paginas/Cobros';
 import Gestoria from './paginas/Gestoria';
 import Presupuestos from './paginas/Presupuestos';
 import Servicios from './paginas/Servicios';
+import Contratos from './paginas/Contratos';
+import Firmar from './paginas/Firmar';
 import PortalClientes from './paginas/PortalClientes';
 
-/** /portal es el portal de clientes, con su propio acceso; todo lo demás, la app de la oficina */
+/** /portal es el portal de clientes y /firmar la firma de documentos, con su propio acceso; todo lo demás, la app de la oficina */
 export default function App() {
-  return window.location.pathname.replace(/\/$/, '') === '/portal' ? <PortalClientes /> : <AppOficina />;
+  const ruta = window.location.pathname.replace(/\/$/, '');
+  if (ruta === '/portal') return <PortalClientes />;
+  if (ruta === '/firmar') return <Firmar />;
+  return <AppOficina />;
 }
 
 // Una sola vez aunque React monte la app dos veces: el enlace solo vale para un uso
@@ -99,6 +104,7 @@ function AppOficina() {
         <Route path="empleados/:id?" element={<ConPermiso permiso="empleados"><Empleados /></ConPermiso>} />
         <Route path="nominas" element={<ConPermiso permiso="nominas"><Nominas /></ConPermiso>} />
         <Route path="presupuestos/:id?" element={<ConPermiso permiso="presupuestos"><Presupuestos /></ConPermiso>} />
+        <Route path="contratos/:id?" element={<ConPermiso permiso="contratos"><Contratos /></ConPermiso>} />
         <Route path="servicios/:id?" element={<ConPermiso permiso="servicios"><Servicios /></ConPermiso>} />
         <Route path="cobros" element={<ConPermiso permiso="cobros"><Cobros /></ConPermiso>} />
         <Route path="gestoria" element={<ConPermiso permiso="gestoria"><Gestoria /></ConPermiso>} />

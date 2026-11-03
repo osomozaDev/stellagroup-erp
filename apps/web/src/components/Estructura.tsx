@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Briefcase, CalendarPlus, ExternalLink, FileSignature, FileText, FolderKanban, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
+  Briefcase, CalendarPlus, ExternalLink, FileSignature, FileText, ScrollText, FolderKanban, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -16,6 +16,7 @@ const menu = [
   { a: '/clientes', texto: 'Clientes', icono: Users },
   { a: '/proyectos', texto: 'Proyectos', icono: FolderKanban },
   { a: '/presupuestos', texto: 'Presupuestos', icono: FileSignature },
+  { a: '/contratos', texto: 'Contratos', icono: ScrollText },
   { a: '/servicios', texto: 'Servicios', icono: RefreshCw },
   { a: '/cobros', texto: 'Cobros', icono: HandCoins },
   { a: '/empleados', texto: 'Equipo', icono: UserRound },
@@ -101,7 +102,7 @@ export default function Estructura({ email }: { email: string }) {
   );
 
   // En móvil la barra inferior se oculta dentro de un detalle para dejar sitio
-  const enDetalle = /^\/(facturas|clientes|proyectos|presupuestos|servicios|empleados)\/.+/.test(pathname) || pathname === '/facturar-mes';
+  const enDetalle = /^\/(facturas|clientes|proyectos|presupuestos|contratos|servicios|empleados)\/.+/.test(pathname) || pathname === '/facturar-mes';
 
   return (
     <div className="flex h-full">

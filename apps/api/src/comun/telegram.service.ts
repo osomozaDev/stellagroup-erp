@@ -12,6 +12,7 @@ export const TIPOS_AVISO = [
   { clave: 'vencidas', nombre: 'Facturas que vencen', descripcion: 'Por la mañana, las facturas que han vencido sin cobrar' },
   { clave: 'facturar', nombre: 'Fin de mes', descripcion: 'Los últimos días del mes, si quedan proyectos por horas sin facturar' },
   { clave: 'renovaciones', nombre: 'Renovaciones', descripcion: 'Una semana antes de que renueve un hosting, dominio o mantenimiento' },
+  { clave: 'firmas', nombre: 'Firmas', descripcion: 'Cuando un cliente firma o rechaza un presupuesto o un contrato' },
   { clave: 'semanal', nombre: 'Resumen de los lunes', descripcion: 'Lo que te deben, lo vencido y lo facturado y cobrado la semana pasada' },
 ] as const;
 export type TipoAviso = (typeof TIPOS_AVISO)[number]['clave'];

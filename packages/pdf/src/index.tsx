@@ -1,5 +1,6 @@
 import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer';
-import { aclarar, euros, fecha, nombreMes, num } from './formato';
+import { bloquesContrato, ParteTexto } from '@stella/shared';
+import { aclarar, euros, fecha, fechaHora, nombreMes, num } from './formato';
 
 /**
  * Plantilla del PDF de las facturas y los presupuestos. La usan la web (descargar,
@@ -132,10 +133,7 @@ export function FacturaPdf({ f }: { f: any }) {
               <Text>{f.condiciones || e.condiciones_presupuesto || 'Precios sin IVA salvo que se indique. Forma de pago: 50 % al aceptar y 50 % a la entrega.'}</Text>
             </View>
             {f.notas && <Text style={[s.gris, { marginTop: 14 }]}>{f.notas}</Text>}
-            <View style={[s.fila, { gap: 24, marginTop: 30 }]}>
-              <View style={{ flex: 1, borderTopWidth: 0.5, borderTopColor: gris, paddingTop: 6 }}><Text style={s.gris}>Aceptado por el cliente (firma y fecha)</Text></View>
-              <View style={{ flex: 1, borderTopWidth: 0.5, borderTopColor: gris, paddingTop: 6 }}><Text style={s.gris}>{e.nombre}</Text></View>
-            </View>
+            <Firmas f={f} />
           </View>
         )}
 
@@ -169,6 +167,7 @@ export function FacturaPdf({ f }: { f: any }) {
           <Text style={{ width: 90, textAlign: 'right' }} render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
         </View>
       </Page>
+      {f.firma && <PaginaCertificado f={f} />}
     </Document>
   );
 }
@@ -190,9 +189,137 @@ const Total = ({ t, v }: { t: string; v: string }) => (
 export const nombreArchivoPdf = (f: any) =>
   `${titulo(f)} - ${f.cliente?.nombre ?? ''}`.replace(/[\\/:*?"<>|]/g, '').replace(/[.\s]+$/, '') + '.pdf';
 
-export const titulo = (f: any) => (f.tipo_documento === 'presupuesto' ? `Presupuesto ${f.numero}` : f.rectifica_id ? `Rectificativa ${f.numero}` : f.numero ? `Factura ${f.numero}` : `Prefactura ${f.periodo ? nombreMes(f.periodo) : ''}`.trim());
+export const titulo = (f: any) => (f.tipo_documento === 'contrato' ? `Contrato ${f.numero}` : f.tipo_documento === 'presupuesto' ? `Presupuesto ${f.numero}` : f.rectifica_id ? `Rectificativa ${f.numero}` : f.numero ? `Factura ${f.numero}` : `Prefactura ${f.periodo ? nombreMes(f.periodo) : ''}`.trim());
 
-/** Solo en el servidor: el PDF como Buffer para adjuntarlo al correo */
+/** Solo en el servidor: el PDF como Buffer (facturas, presupuestos y contratos) */
 export function pdfFacturaBuffer(f: any) {
-  return renderToBuffer(<FacturaPdf f={f} />);
+  return renderToBuffer(f.tipo_documento === 'contrato' ? <ContratoPdf c={f} /> : <FacturaPdf f={f} />);
+}
+
+// ───────────── Contratos y firma electrónica ─────────────
+
+const Rico = ({ partes }: { partes: ParteTexto[] }) => (
+  <>{partes.map((p, i) => <Text key={i} style={p.negrita ? s.fuerte : undefined}>{p.texto}</Text>)}</>
+);
+
+export function ContratoPdf({ c }: { c: any }) {
+  const e = c.empresa ?? {};
+  const color = e.color || '#1f6feb';
+  return (
+    <Document title={titulo(c)} author={e.nombre} creator="Stella ERP">
+      <Page size="A4" style={s.pagina}>
+        <View style={[s.fila, { justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 }]} fixed>
+          <View style={{ maxWidth: 300 }}>
+            {e.logo && <Image src={e.logo} style={{ height: 40, maxWidth: 200, objectFit: 'contain', objectPositionX: 0, marginBottom: 6 }} />}
+            <Text style={[s.fuerte, { fontSize: 9.5 }]}>{e.nombre}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 13, fontWeight: 700, color }}>Contrato</Text>
+            <Text style={s.gris}>Nº {c.numero} · {fecha(c.fecha)}</Text>
+          </View>
+        </View>
+        {bloquesContrato(c.cuerpo ?? '').map((b, i) =>
+          b.tipo === 'titulo' ? (
+            <Text key={i} style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}><Rico partes={b.partes} /></Text>
+          ) : b.tipo === 'apartado' ? (
+            <Text key={i} style={{ fontSize: 10.5, fontWeight: 700, color, marginTop: 10, marginBottom: 5 }} minPresenceAhead={40}><Rico partes={b.partes} /></Text>
+          ) : b.tipo === 'lista' ? (
+            <View key={i} style={[s.fila, { marginBottom: 3, paddingLeft: 8 }]}>
+              <Text style={{ width: 10 }}>•</Text>
+              <Text style={{ flex: 1 }}><Rico partes={b.partes} /></Text>
+            </View>
+          ) : (
+            <Text key={i} style={{ marginBottom: 7, textAlign: 'justify' }}><Rico partes={b.partes} /></Text>
+          ),
+        )}
+        <Firmas f={c} />
+        <View style={[s.fila, s.pie]} fixed>
+          <Text style={{ flex: 1, paddingRight: 20 }}>{c.firma ? `Firmado electrónicamente · huella ${c.firma.huella.slice(0, 16)}…` : `${e.nombre} · Contrato ${c.numero}`}</Text>
+          <Text style={{ width: 90, textAlign: 'right' }} render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
+        </View>
+      </Page>
+      {c.firma && <PaginaCertificado f={c} />}
+    </Document>
+  );
+}
+
+/** Recuadros de firma: la empresa y el cliente (con su firma, si ya ha firmado) */
+function Firmas({ f }: { f: any }) {
+  const e = f.empresa ?? {};
+  const firma = f.firma;
+  return (
+    <View style={[s.fila, { gap: 24, marginTop: 30 }]} wrap={false}>
+      <View style={{ flex: 1 }}>
+        <View style={{ height: 64 }} />
+        <View style={{ borderTopWidth: 0.5, borderTopColor: gris, paddingTop: 6 }}>
+          <Text style={s.fuerte}>{e.nombre}</Text>
+          {e.cif && <Text style={s.gris}>CIF {e.cif}</Text>}
+        </View>
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={{ height: 64, justifyContent: 'flex-end' }}>
+          {firma?.imagen && <Image src={firma.imagen} style={{ height: 60, maxWidth: 200, objectFit: 'contain', objectPositionX: 0 }} />}
+        </View>
+        <View style={{ borderTopWidth: 0.5, borderTopColor: gris, paddingTop: 6 }}>
+          {firma ? (
+            <>
+              <Text style={s.fuerte}>{firma.nombre}{firma.nif ? ` · ${firma.nif}` : ''}</Text>
+              <Text style={s.gris}>Por {f.cliente?.nombre} · firmado electrónicamente el {fechaHora(firma.firmado_en)}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={s.fuerte}>{f.cliente?.nombre}</Text>
+              <Text style={s.gris}>Firma y fecha</Text>
+            </>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Última página: quién, cuándo, desde dónde y la huella del documento firmado */
+function PaginaCertificado({ f }: { f: any }) {
+  const e = f.empresa ?? {};
+  const x = f.firma;
+  const color = e.color || '#1f6feb';
+  const filas: [string, string][] = [
+    ['Documento', `${titulo(f)} · ${f.titulo ?? ''}`],
+    ['Emisor', `${e.nombre}${e.cif ? ` · CIF ${e.cif}` : ''}`],
+    ['Firmante', `${x.nombre}${x.nif ? ` · NIF ${x.nif}` : ''}${f.cliente?.nombre ? ` · en nombre de ${f.cliente.nombre}` : ''}`],
+    ['Correo verificado', x.email],
+    ['Enviado para firmar', `${fechaHora(x.enviado_en)}${x.enviado_por ? ` por ${x.enviado_por}` : ''}`],
+    ['Abierto por el firmante', fechaHora(x.visto_en)],
+    ['Código por correo verificado', fechaHora(x.verificado_en)],
+    ['Firmado', fechaHora(x.firmado_en)],
+    ['Dirección IP', x.ip ?? '—'],
+    ['Navegador', x.navegador ?? '—'],
+    ['Huella del documento (SHA-256)', x.huella],
+    ['Identificador de la firma', x.id],
+  ];
+  return (
+    <Page size="A4" style={s.pagina}>
+      <Text style={{ fontSize: 16, fontWeight: 700, color }}>Certificado de firma electrónica</Text>
+      <Text style={[s.gris, { marginTop: 4, marginBottom: 18 }]}>Evidencias de la firma de este documento, registradas por {e.nombre}.</Text>
+      {filas.map(([t, v]) => (
+        <View key={t} style={[s.fila, { borderBottomWidth: 0.5, borderBottomColor: linea, paddingVertical: 7 }]} wrap={false}>
+          <Text style={{ width: 160, color: gris }}>{t}</Text>
+          <Text style={{ flex: 1, fontWeight: 500 }}>{v}</Text>
+        </View>
+      ))}
+      <View style={{ marginTop: 18 }} wrap={false}>
+        <Text style={s.etiqueta}>Firma manuscrita</Text>
+        {x.imagen && <Image src={x.imagen} style={{ height: 80, maxWidth: 260, objectFit: 'contain', objectPositionX: 0 }} />}
+      </View>
+      <Text style={[s.gris, { marginTop: 22, fontSize: 8 }]}>
+        Firma electrónica conforme al artículo 25 del Reglamento (UE) 910/2014 (eIDAS) y a la Ley 6/2020. El firmante accedió con un enlace personal enviado a su
+        correo, confirmó su identidad con un código de un solo uso enviado a esa misma dirección, aceptó expresamente el contenido y firmó a mano en la pantalla.
+        La huella SHA-256 identifica el contenido exacto que se firmó: cualquier cambio posterior daría una huella distinta.
+      </Text>
+      <View style={[s.fila, s.pie]} fixed>
+        <Text style={{ flex: 1, paddingRight: 20 }}>{e.nombre} · Certificado de firma {x.id}</Text>
+        <Text style={{ width: 90, textAlign: 'right' }} render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
+      </View>
+    </Page>
+  );
 }

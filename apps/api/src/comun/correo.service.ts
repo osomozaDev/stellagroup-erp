@@ -4,7 +4,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import nodemailer, { Transporter } from 'nodemailer';
 import { SUPABASE } from './supabase.module';
 import { ok } from './db';
-import { correoAcceso, correoHtml, correoTexto, DatosCorreo, documento, logoIncrustado, nombreSinForma } from './plantilla-correo';
+import { correoAcceso, correoHtml, correoSimple, correoTexto, DatosCorreo, documento, logoIncrustado, nombreSinForma } from './plantilla-correo';
 import { correosPortal, crearEnlacePortal, normalizarEmail } from './portal';
 
 export interface Correo {
@@ -93,6 +93,46 @@ export class CorreoService {
       })
       .catch((e) => {
         this.log.error(`No se ha podido enviar el acceso al portal a ${para}: ${e.response ?? e.message}`);
+        throw new ServiceUnavailableException(motivoFallo(e));
+      });
+    return { modo: 'real' as const };
+  }
+
+  /**
+   * Correo con la marca de la empresa que no va ligado a una factura (peticiones de
+   * firma, códigos, copias firmadas). En modo prueba se escribe en el registro de la API.
+   */
+  async enviarSimple(c: {
+    para: string;
+    asunto: string;
+    parrafos: string[];
+    boton?: { texto: string; url: string };
+    destacado?: string;
+    nota?: string;
+    adjunto?: { nombre: string; contenido: Buffer };
+  }) {
+    const empresa = ok(await this.db.from('empresa').select('nombre, email, cif, direccion, cp, ciudad, provincia, telefono, color, logo').eq('id', 1).single()) as any;
+    if (!this.transporte) {
+      this.log.warn(`Modo prueba (sin SMTP): «${c.asunto}» para ${c.para}${c.boton ? ` · ${c.boton.url}` : ''}${c.destacado ? ` · ${c.destacado}` : ''}`);
+      return { modo: 'prueba' as const };
+    }
+    const logo = logoIncrustado(empresa.logo);
+    const { html, texto } = correoSimple(empresa, c, !!logo);
+    await this.transporte
+      .sendMail({
+        from: { name: empresa.nombre, address: this.remitente ?? empresa.email },
+        replyTo: empresa.email ?? undefined,
+        to: c.para,
+        subject: c.asunto,
+        text: texto,
+        html,
+        attachments: [
+          ...(c.adjunto ? [{ filename: c.adjunto.nombre, content: c.adjunto.contenido, contentType: 'application/pdf' }] : []),
+          ...(logo ? [logo] : []),
+        ],
+      })
+      .catch((e) => {
+        this.log.error(`No se ha podido enviar «${c.asunto}» a ${c.para}: ${e.response ?? e.message}`);
         throw new ServiceUnavailableException(motivoFallo(e));
       });
     return { modo: 'real' as const };

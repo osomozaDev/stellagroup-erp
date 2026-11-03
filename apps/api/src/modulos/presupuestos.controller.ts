@@ -1,13 +1,15 @@
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
-  AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput, presupuestoSchema, redondear,
+  AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, EnviarFirmaInput, enviarFirmaSchema, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput,
+  presupuestoSchema, redondear,
 } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
 import { busqueda, ok } from '../comun/db';
 import { EnvioFacturaService } from './envio-factura.service';
+import { FirmasService } from './firmas.service';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
@@ -16,6 +18,7 @@ export class PresupuestosController {
   constructor(
     @Inject(SUPABASE) private readonly db: SupabaseClient,
     private readonly envio: EnvioFacturaService,
+    private readonly firmas: FirmasService,
   ) {}
 
   @Get()
@@ -42,13 +45,17 @@ export class PresupuestosController {
         .order('orden', { referencedTable: 'presupuesto_lineas' })
         .single(),
     ) as any;
-    const empresa = ok(await this.db.from('empresa').select('*').eq('id', 1).single());
-    return { ...p, empresa, tipo_documento: 'presupuesto' };
+    const [empresa, firmas] = await Promise.all([
+      this.db.from('empresa').select('*').eq('id', 1).single().then((r) => ok(r)),
+      this.firmas.deDocumento('presupuesto', id),
+    ]);
+    return { ...p, empresa, firmas, tipo_documento: 'presupuesto' };
   }
 
   @Get(':id/pdf')
   async pdf(@Param('id') id: string, @Res() res: Response) {
-    const { pdf, nombre } = await this.envio.pdfDe(await this.ver(id));
+    // Si está firmado, la copia firmada (con su certificado); si no, el presupuesto tal cual
+    const { pdf, nombre } = (await this.firmas.pdfFirmado('presupuesto', id)) ?? (await this.envio.pdfDe(await this.ver(id)));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`);
     res.send(pdf);
@@ -81,6 +88,7 @@ export class PresupuestosController {
   async editar(@Param('id') id: string, @Body(new ZodPipe(presupuestoSchema)) body: PresupuestoInput) {
     const actual = ok(await this.db.from('presupuestos').select('estado').eq('id', id).single()) as any;
     if (actual.estado === 'aceptado') throw new BadRequestException('Un presupuesto aceptado no se cambia: el proyecto ya tiene sus hitos');
+    await this.firmas.comprobarEditable('presupuesto', id);
     const { cabecera, lineas } = this.filas(body);
     const p = ok(await this.db.from('presupuestos').update(cabecera).eq('id', id).select().single());
     ok(await this.db.from('presupuesto_lineas').delete().eq('presupuesto_id', id));
@@ -95,6 +103,8 @@ export class PresupuestosController {
     const actual = ok(await this.db.from('presupuestos').select('estado').eq('id', id).single()) as any;
     if (actual.estado === 'aceptado') throw new BadRequestException('Este presupuesto ya está aceptado');
     const respondido_en = estado === 'rechazado' ? hoy() : null;
+    // Si se vuelve a borrador o se da por rechazado a mano, el enlace de firma deja de valer
+    if (estado !== 'enviado') ok(await this.db.from('firmas').update({ estado: 'anulado' }).eq('documento_tipo', 'presupuesto').eq('documento_id', id).eq('estado', 'pendiente'));
     return ok(await this.db.from('presupuestos').update({ estado, respondido_en }).eq('id', id).select().single());
   }
 
@@ -105,7 +115,8 @@ export class PresupuestosController {
   @Post(':id/aceptar')
   async aceptar(@Param('id') id: string, @Body(new ZodPipe(aceptarPresupuestoSchema)) body: AceptarPresupuestoInput) {
     const p = await this.ver(id);
-    if (p.estado === 'aceptado') throw new BadRequestException('Este presupuesto ya está aceptado');
+    // Un presupuesto firmado por el cliente ya está aceptado: aquí solo falta crear el proyecto
+    if (p.estado === 'aceptado' && (p.proyecto_id || !body.crear_proyecto)) throw new BadRequestException('Este presupuesto ya está aceptado');
     let proyectoId: string | null = p.proyecto_id ?? null;
     if (body.crear_proyecto && !proyectoId) {
       const proyecto = ok(
@@ -141,9 +152,21 @@ export class PresupuestosController {
         ),
       );
     }
+    // Aceptado a mano (p. ej. firmado en papel): el enlace de firma pendiente deja de valer
+    ok(await this.db.from('firmas').update({ estado: 'anulado' }).eq('documento_tipo', 'presupuesto').eq('documento_id', id).eq('estado', 'pendiente'));
     return ok(
-      await this.db.from('presupuestos').update({ estado: 'aceptado', respondido_en: hoy(), proyecto_id: proyectoId }).eq('id', id).select().single(),
+      await this.db.from('presupuestos').update({ estado: 'aceptado', respondido_en: p.respondido_en ?? hoy(), proyecto_id: proyectoId }).eq('id', id).select().single(),
     );
+  }
+
+  @Post(':id/firma')
+  enviarFirma(@Param('id') id: string, @Body(new ZodPipe(enviarFirmaSchema)) body: EnviarFirmaInput, @Req() req: any) {
+    return this.firmas.enviar('presupuesto', id, body, req.user?.email ?? null);
+  }
+
+  @Delete(':id/firma')
+  anularFirma(@Param('id') id: string) {
+    return this.firmas.anular('presupuesto', id);
   }
 
   /** Copia de un presupuesto (p. ej. para hacer una versión con otro alcance) */

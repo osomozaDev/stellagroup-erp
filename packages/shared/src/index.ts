@@ -251,6 +251,131 @@ export const aceptarPresupuestoSchema = z.object({
 });
 export type AceptarPresupuestoInput = z.infer<typeof aceptarPresupuestoSchema>;
 
+// ───────────── Contratos ─────────────
+
+export const ESTADOS_CONTRATO = ['borrador', 'enviado', 'firmado', 'rechazado', 'anulado'] as const;
+export type EstadoContrato = (typeof ESTADOS_CONTRATO)[number];
+
+export const plantillaContratoSchema = z.object({
+  nombre: z.string().trim().min(1, 'Ponle un nombre a la plantilla'),
+  descripcion: texto,
+  cuerpo: z.string().trim().min(20, 'Escribe el texto del contrato'),
+  activa: z.coerce.boolean().default(true),
+});
+export type PlantillaContratoInput = z.infer<typeof plantillaContratoSchema>;
+
+const idOpcional = z.string().uuid().optional().nullable().or(z.literal('')).transform((v) => v || null);
+
+export const contratoSchema = z.object({
+  cliente_id: z.string().uuid('Elige un cliente'),
+  proyecto_id: idOpcional,
+  presupuesto_id: idOpcional,
+  plantilla_id: idOpcional,
+  titulo: z.string().trim().min(1, 'Ponle un título al contrato'),
+  cuerpo: z.string().trim().min(20, 'Escribe el texto del contrato'),
+  fecha: z.string().min(1),
+  notas: texto,
+});
+export type ContratoInput = z.infer<typeof contratoSchema>;
+
+/** Variables que se pueden usar en las plantillas, con un ejemplo para la ayuda */
+export const VARIABLES_CONTRATO = [
+  ['empresa.nombre', 'Tu empresa'], ['empresa.cif', 'Tu CIF'], ['empresa.direccion_completa', 'Tu dirección'], ['empresa.ciudad', 'Tu ciudad'],
+  ['empresa.dias_pago', 'Días para pagar'], ['cliente.nombre', 'Razón social del cliente'], ['cliente.cif', 'CIF del cliente'],
+  ['cliente.direccion_completa', 'Dirección del cliente'], ['cliente.contacto', 'Persona de contacto'], ['proyecto.nombre', 'Proyecto'],
+  ['proyecto.inicio', 'Fecha de inicio'], ['proyecto.entrega', 'Entrega prevista'], ['presupuesto.numero', 'Nº de presupuesto'],
+  ['presupuesto.base', 'Importe sin IVA'], ['presupuesto.total', 'Importe con IVA'], ['servicios.lista', 'Servicios recurrentes del cliente'],
+  ['fecha.larga', 'Fecha del contrato'], ['fecha.ciudad', 'Ciudad donde se firma'],
+] as const;
+
+const fechaLargaEs = (f?: string | null) =>
+  f ? new Date(`${f.slice(0, 10)}T12:00:00Z`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+const eurosEs = (n: unknown) =>
+  new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', useGrouping: 'always' } as Intl.NumberFormatOptions).format(Number(n ?? 0));
+const direccion = (x: any) =>
+  [x?.direccion, [x?.cp, x?.ciudad, x?.provincia && x.provincia !== x.ciudad && `(${x.provincia})`].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+
+/**
+ * Pone los datos en las variables de una plantilla. Lo que falta se deja marcado
+ * como «[falta …]» para que se vea antes de enviarlo.
+ */
+export function rellenarPlantilla(
+  cuerpo: string,
+  d: { empresa?: any; cliente?: any; proyecto?: any; presupuesto?: any; servicios?: any[]; fecha?: string },
+) {
+  const periodo: Record<string, string> = { mensual: 'al mes', trimestral: 'al trimestre', semestral: 'al semestre', anual: 'al año' };
+  const valores: Record<string, string> = {
+    'empresa.nombre': d.empresa?.nombre ?? '',
+    'empresa.cif': d.empresa?.cif ?? '',
+    'empresa.direccion_completa': direccion(d.empresa),
+    'empresa.ciudad': d.empresa?.ciudad ?? '',
+    'empresa.dias_pago': d.empresa?.dias_vencimiento != null ? String(d.empresa.dias_vencimiento) : '',
+    'cliente.nombre': d.cliente?.nombre ?? '',
+    'cliente.cif': d.cliente?.cif ?? '',
+    'cliente.direccion_completa': direccion(d.cliente),
+    'cliente.contacto': d.cliente?.contacto ?? '',
+    'proyecto.nombre': d.proyecto?.nombre ?? d.presupuesto?.titulo ?? '',
+    'proyecto.inicio': fechaLargaEs(d.proyecto?.fecha_inicio),
+    'proyecto.entrega': fechaLargaEs(d.proyecto?.fecha_fin),
+    'presupuesto.numero': d.presupuesto?.numero ?? '',
+    'presupuesto.base': d.presupuesto ? eurosEs(d.presupuesto.base) : '',
+    'presupuesto.total': d.presupuesto ? eurosEs(d.presupuesto.total) : '',
+    'servicios.lista': (d.servicios ?? []).map((s) => `- ${s.nombre}${s.detalle ? ` (${s.detalle})` : ''}: ${eurosEs(s.precio)} ${periodo[s.periodicidad] ?? ''} + IVA`).join('\n'),
+    'fecha.larga': fechaLargaEs(d.fecha),
+    'fecha.ciudad': d.empresa?.ciudad ?? '',
+  };
+  return cuerpo.replace(/\{([a-z_]+\.[a-z_]+)\}/g, (todo, clave: string) => {
+    if (!(clave in valores)) return todo;
+    return valores[clave] || `[falta ${clave.replace('.', ' · ').replace('_', ' ')}]`;
+  });
+}
+
+export type ParteTexto = { texto: string; negrita?: boolean };
+export type BloqueContrato = { tipo: 'titulo' | 'apartado' | 'parrafo' | 'lista'; partes: ParteTexto[] };
+
+/** «# Título», «## Apartado», párrafos y «- » listas, con **negrita**. Lo usan la web y el PDF. */
+export function bloquesContrato(cuerpo: string): BloqueContrato[] {
+  const partes = (t: string): ParteTexto[] =>
+    t.split(/(\*\*[^*]+\*\*)/).filter(Boolean).map((x) => (x.startsWith('**') && x.endsWith('**') ? { texto: x.slice(2, -2), negrita: true } : { texto: x }));
+  const bloques: BloqueContrato[] = [];
+  let parrafo: string[] = [];
+  const cerrar = () => {
+    if (parrafo.length) bloques.push({ tipo: 'parrafo', partes: partes(parrafo.join(' ')) });
+    parrafo = [];
+  };
+  for (const linea of cuerpo.replace(/\r/g, '').split('\n')) {
+    const l = linea.trim();
+    if (!l) cerrar();
+    else if (l.startsWith('## ')) { cerrar(); bloques.push({ tipo: 'apartado', partes: partes(l.slice(3)) }); }
+    else if (l.startsWith('# ')) { cerrar(); bloques.push({ tipo: 'titulo', partes: partes(l.slice(2)) }); }
+    else if (/^[-•] /.test(l)) { cerrar(); bloques.push({ tipo: 'lista', partes: partes(l.slice(2)) }); }
+    else parrafo.push(l);
+  }
+  cerrar();
+  return bloques;
+}
+
+// ───────────── Firma electrónica ─────────────
+
+export const enviarFirmaSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Escribe el correo de quien tiene que firmar'),
+  nombre: texto,
+  mensaje: texto,
+  dias: z.coerce.number().int().min(1).max(90).default(30),
+});
+export type EnviarFirmaInput = z.infer<typeof enviarFirmaSchema>;
+
+export const firmarSchema = z.object({
+  codigo: z.string().trim().regex(/^\d{6}$/, 'El código tiene 6 números'),
+  nombre: z.string().trim().min(3, 'Escribe tu nombre y apellidos'),
+  nif: z.string().trim().max(20).optional().nullable().transform((v) => (v ? v.toUpperCase() : null)),
+  firma: z.string().startsWith('data:image/png;base64,', 'Firma en el recuadro').max(400_000, 'La firma es demasiado grande'),
+  acepto: z.literal(true, { errorMap: () => ({ message: 'Marca que has leído el documento y lo aceptas' }) }),
+});
+export type FirmarInput = z.infer<typeof firmarSchema>;
+
+export const rechazarFirmaSchema = z.object({ motivo: z.string().trim().min(3, 'Cuéntanos brevemente por qué').max(1000) });
+
 // ───────────── Servicios recurrentes ─────────────
 
 export const TIPOS_SERVICIO = [
@@ -439,7 +564,8 @@ export const PERMISOS = [
   { clave: 'facturas', nombre: 'Facturas', descripcion: 'Ver, crear y emitir facturas y prefacturas' },
   { clave: 'clientes', nombre: 'Clientes', descripcion: 'Datos y condiciones de pago de los clientes' },
   { clave: 'proyectos', nombre: 'Proyectos', descripcion: 'Proyectos, hitos, horas y prefacturas' },
-  { clave: 'presupuestos', nombre: 'Presupuestos', descripcion: 'Preparar, enviar y aceptar presupuestos' },
+  { clave: 'presupuestos', nombre: 'Presupuestos', descripcion: 'Preparar, enviar a firmar y aceptar presupuestos' },
+  { clave: 'contratos', nombre: 'Contratos', descripcion: 'Contratos, sus plantillas y la firma electrónica' },
   { clave: 'servicios', nombre: 'Servicios', descripcion: 'Hosting, dominios, mantenimientos y sus renovaciones' },
   { clave: 'empleados', nombre: 'Equipo', descripcion: 'Fichas y sueldos del equipo' },
   { clave: 'nominas', nombre: 'Nóminas', descripcion: 'Preparar y marcar nóminas como pagadas' },
@@ -460,6 +586,8 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
   proyectos: 'proyectos',
   hitos: 'proyectos',
   presupuestos: 'presupuestos',
+  contratos: 'contratos',
+  'plantillas-contrato': 'contratos',
   servicios: 'servicios',
   empleados: 'empleados',
   nominas: 'nominas',
@@ -476,11 +604,11 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
  * una factura hay que elegir cliente y proyecto). Solo lectura (GET).
  */
 const LECTURA_TAMBIEN: Partial<Record<Permiso, Permiso[]>> = {
-  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros'],
-  proyectos: ['facturas', 'clientes', 'empleados', 'presupuestos', 'servicios'],
+  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros', 'contratos'],
+  proyectos: ['facturas', 'clientes', 'empleados', 'presupuestos', 'servicios', 'contratos'],
   empleados: ['proyectos'],
-  servicios: ['inicio', 'clientes'],
-  presupuestos: ['clientes', 'proyectos'],
+  presupuestos: ['clientes', 'proyectos', 'contratos'],
+  servicios: ['inicio', 'clientes', 'contratos'],
   facturas: ['cobros'],
 };
 

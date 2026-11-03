@@ -6,8 +6,10 @@ Parte de la misma base que ObraFácil (el ERP de Heras Perea), adaptada de obras
 
 ## Qué hace
 
-- **Clientes → Presupuestos → Proyectos → Facturas.**
+- **Clientes → Presupuestos → Contratos → Proyectos → Facturas.**
 - **Presupuestos** numerados (`P2026-001`) con sus partidas, PDF, estados *borrador / enviado / aceptado / rechazado* y aviso de los caducados. Al aceptarlo se crea el proyecto con **un hito por partida**.
+- **Contratos** a partir de plantillas (desarrollo de software, mantenimiento y hosting, NDA) que se rellenan solas con los datos del cliente, el proyecto, el presupuesto y sus servicios. Los datos que faltan salen marcados. Las plantillas se editan desde la app.
+- **Firma electrónica** de presupuestos y contratos: el cliente recibe un enlace personal, revisa el documento, confirma con un código de un solo uso que le llega al correo y firma con el dedo o el ratón. Se guardan las evidencias (correo verificado, fechas, IP, navegador y huella SHA-256 del documento congelado al enviarlo) y el PDF firmado lleva una página de certificado. Al firmar, el presupuesto queda aceptado y el contrato firmado; la oficina recibe aviso por correo y Telegram y el cliente su copia. Es una firma electrónica según el art. 25 del Reglamento eIDAS; no es una firma cualificada con certificado.
 - **Proyectos** de dos tipos:
   - **Por hitos** (precio cerrado): cada entrega tiene su importe; al entregarla se marca y se factura con un clic (o se prepara como prefactura).
   - **Por horas** (bolsa de horas, evolución, soporte): horas apuntadas semana a semana y **Facturar el mes**, que crea todas las facturas de una vez y no deja facturar dos veces el mismo mes.
@@ -50,6 +52,8 @@ pnpm dev                      # web en http://localhost:5183, API en :3101
 `pnpm db:reset` borra la base de datos y carga los datos de ejemplo (`supabase/seed.sql`): cinco clientes, proyectos por hitos y por horas, presupuestos en todos los estados, servicios con renovaciones próximas y facturas de julio a octubre de 2026. Después hay que volver a crear el usuario.
 
 Los datos fiscales de la empresa del ejemplo (CIF, dirección, IBAN) son de relleno: pon los reales en «Mi empresa».
+
+Para ver en local los correos (facturas, peticiones de firma y códigos), usa el buzón de Supabase: en `.env` pon `SMTP_HOST=127.0.0.1`, `SMTP_PORT=56325` y `SMTP_FROM=facturas@stellagroup.test`, y ábrelo en http://127.0.0.1:56324. Sin SMTP, el enlace de firma se puede copiar desde la app y el código sale en el registro de la API.
 
 ## Producción
 

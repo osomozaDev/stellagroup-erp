@@ -16,3 +16,7 @@ export const aclarar = (hex: string, cuanto: number) => {
   const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * cuanto));
   return `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 };
+
+/** Fecha y hora en Madrid: «3 nov 2026, 10:42» */
+export const fechaHora = (f?: string | null) =>
+  f ? new Date(f).toLocaleString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }) + ' (hora de Madrid)' : '—';

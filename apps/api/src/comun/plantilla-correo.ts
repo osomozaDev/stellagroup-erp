@@ -193,3 +193,41 @@ export function correoAcceso(e: DatosCorreo['empresa'], cliente: string, url: st
   const texto = `Hola,\n\nEntra aquí para ver y descargar las facturas de ${cliente}:\n${url}\n\nEl enlace sirve una vez y caduca en una hora. Si no lo has pedido tú, ignora este correo.\n\n—\n${pie(e).join(' · ')}`;
   return { html, texto };
 }
+
+/** Correo corto con la marca de la empresa: párrafos, un botón opcional y una nota al pie */
+export function correoSimple(
+  e: DatosCorreo['empresa'],
+  c: { parrafos: string[]; boton?: { texto: string; url: string }; destacado?: string; nota?: string },
+  conLogo: boolean,
+) {
+  const color = colorValido(e.color);
+  const fuente = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  const nombre = escapar(nombreSinForma(e.nombre));
+  const cabecera = conLogo
+    ? `<img src="cid:logo@stellagroup-erp" alt="${nombre}" height="56" style="display:block;height:56px;width:auto;border:0">`
+    : `<span style="font-size:17px;font-weight:600;color:${color}">${nombre}</span>`;
+  const parrafos = c.parrafos.map((p) => `<p style="margin:0 0 14px">${escapar(p).replace(/\n/g, '<br>')}</p>`).join('');
+  const destacado = c.destacado
+    ? `<p style="margin:6px 0 20px;font-size:30px;font-weight:700;letter-spacing:8px;color:#101828">${escapar(c.destacado)}</p>`
+    : '';
+  const boton = c.boton
+    ? `<p style="margin:6px 0 20px"><a href="${escapar(c.boton.url)}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${escapar(c.boton.texto)}</a></p>`
+    : '';
+  const nota = c.nota ? `<p style="margin:0 0 18px;font-size:13px;color:#667085">${escapar(c.nota)}</p>` : '';
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f4f7">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;${fuente}">
+<tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e4e7ec">
+  <tr><td style="padding:20px 28px;border-bottom:3px solid ${color}">${cabecera}</td></tr>
+  <tr><td style="padding:24px 28px 8px;font-size:15px;line-height:1.6;color:#101828">${parrafos}${destacado}${boton}${nota}</td></tr>
+  <tr><td style="padding:14px 28px;border-top:1px solid #eaecf0;font-size:12px;line-height:1.5;color:#98a2b3">${pie(e).map(escapar).join(' · ')}</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+  const texto = [...c.parrafos, c.destacado ?? '', c.boton ? `${c.boton.texto}: ${c.boton.url}` : '', c.nota ?? '', '—', pie(e).join(' · ')]
+    .filter(Boolean)
+    .join('\n\n');
+  return { html, texto };
+}

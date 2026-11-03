@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Download, FileSignature, FolderKanban, Pencil, Plus, Send, Trash2, Undo2, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Pencil, Plus, Send, Trash2, Undo2, XCircle } from 'lucide-react';
 import { calcularTotales, EstadoPresupuesto, TIPOS_PROYECTO } from '@stella/shared';
 import { api, descargar } from '../lib/api';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
@@ -10,6 +10,7 @@ import {
   FilaLista, Filtros, ListaDetalle, Panel, Selector, SinSeleccion, Vacio, useAviso,
 } from '../components/ui';
 import FacturaDocumento from '../components/FacturaDocumento';
+import FirmaElectronica from '../components/FirmaElectronica';
 
 type Linea = { concepto: string; cantidad: string | number; unidad: string; precio: string | number };
 
@@ -126,6 +127,9 @@ function DetallePresupuesto({ id }: { id: string }) {
   if (isLoading || !p) return <Cargando />;
   const e = estadoPresupuesto({ estado: p.estado, caducado: p.estado === 'enviado' && !!p.valido_hasta && p.valido_hasta < hoyISO() });
   const abierto = p.estado === 'borrador' || p.estado === 'enviado';
+  // Pendiente de firma o firmado: el texto ya no se toca
+  const bloqueado = (p.firmas ?? []).some((f: any) => f.estado === 'pendiente' || f.estado === 'firmado');
+  const firmado = (p.firmas ?? []).find((f: any) => f.estado === 'firmado');
 
   const pdf = async () => {
     setBajando(true);
@@ -148,7 +152,8 @@ function DetallePresupuesto({ id }: { id: string }) {
         acciones={
           <>
             <Boton variante="secundario" icono={<Download className="size-4" />} onClick={pdf} cargando={bajando}>PDF</Boton>
-            {p.estado !== 'aceptado' && <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>}
+            {p.estado !== 'aceptado' && !bloqueado && <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>}
+            <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => navegar(`/contratos?nuevo=1&cliente=${p.cliente_id}&presupuesto=${p.id}`)}>Crear contrato</Boton>
             <Boton variante="secundario" icono={<Copy className="size-4" />} onClick={() => duplicar.mutate()} cargando={duplicar.isPending}>Duplicar</Boton>
             {p.estado !== 'aceptado' && <Boton variante="fantasma" icono={<Trash2 className="size-4" />} onClick={() => setBorrar(true)} aria-label="Borrar" />}
           </>
@@ -161,8 +166,8 @@ function DetallePresupuesto({ id }: { id: string }) {
               <p className="font-semibold">{p.estado === 'borrador' ? '¿Listo para mandarlo?' : '¿Qué ha dicho el cliente?'}</p>
               <p className="text-sm text-slate-600">
                 {p.estado === 'borrador'
-                  ? 'Descarga el PDF, mándaselo al cliente y márcalo como enviado.'
-                  : `Válido hasta el ${fecha(p.valido_hasta)}. Al aceptarlo se crea el proyecto con un hito por cada partida.`}
+                  ? 'Envíaselo a firmar desde aquí abajo, o descarga el PDF, mándaselo tú y márcalo como enviado.'
+                  : `Válido hasta el ${fecha(p.valido_hasta)}. Cuando lo firme quedará aceptado solo; si te lo confirma por otro medio, márcalo tú.`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
@@ -180,8 +185,13 @@ function DetallePresupuesto({ id }: { id: string }) {
         {p.estado === 'aceptado' && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
             <CheckCircle2 className="size-6 text-emerald-600 shrink-0" />
-            <p className="flex-1 text-emerald-900">Aceptado el {fecha(p.respondido_en)}.{p.proyecto && ' Ya es un proyecto con sus hitos.'}</p>
-            {p.proyecto && <Boton variante="secundario" icono={<FolderKanban className="size-4" />} onClick={() => navegar(`/proyectos/${p.proyecto.id}`)}>Ver proyecto</Boton>}
+            <p className="flex-1 text-emerald-900">
+              {firmado ? `Firmado por ${firmado.firmante_nombre} el ${fecha(firmado.firmado_en)}.` : `Aceptado el ${fecha(p.respondido_en)}.`}
+              {p.proyecto ? ' Ya es un proyecto con sus hitos.' : ' Crea el proyecto para empezar a facturar los hitos.'}
+            </p>
+            {p.proyecto
+              ? <Boton variante="secundario" icono={<FolderKanban className="size-4" />} onClick={() => navegar(`/proyectos/${p.proyecto.id}`)}>Ver proyecto</Boton>
+              : <Boton icono={<FolderKanban className="size-4" />} onClick={() => setAceptar(true)}>Crear proyecto</Boton>}
           </div>
         )}
         {p.estado === 'rechazado' && (
@@ -190,6 +200,8 @@ function DetallePresupuesto({ id }: { id: string }) {
             <Boton variante="secundario" icono={<Undo2 className="size-4" />} onClick={() => estado.mutate('enviado')}>Volver a enviado</Boton>
           </div>
         )}
+
+        <FirmaElectronica tipo="presupuesto" documento={p} puedeEnviar={abierto} nombrePdf={`Presupuesto ${p.numero} - ${p.cliente?.nombre ?? ''}${firmado ? ' (firmado)' : ''}.pdf`} />
 
         <FacturaDocumento f={p} />
       </div>
@@ -231,10 +243,10 @@ function AceptarPresupuesto({ presupuesto: p, onCerrar }: { presupuesto: any; on
     <Panel
       abierto
       onCerrar={onCerrar}
-      titulo="El cliente lo ha aceptado"
+      titulo={p.estado === 'aceptado' ? 'Crear el proyecto' : 'El cliente lo ha aceptado'}
       pie={
         <>
-          <Boton variante="secundario" onClick={() => aceptar.mutate(false)} disabled={aceptar.isPending}>Solo marcarlo</Boton>
+          {p.estado !== 'aceptado' && <Boton variante="secundario" onClick={() => aceptar.mutate(false)} disabled={aceptar.isPending}>Solo marcarlo</Boton>}
           <Boton icono={<FolderKanban className="size-4" />} onClick={() => aceptar.mutate(true)} cargando={aceptar.isPending}>Crear proyecto</Boton>
         </>
       }

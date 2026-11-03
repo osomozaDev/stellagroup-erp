@@ -18,6 +18,9 @@ import { GestoriaController } from './modulos/gestoria.controller';
 import { CobrosController, CobrosService, CronController } from './modulos/cobros.controller';
 import { CorreoService } from './comun/correo.service';
 import { PresupuestosController } from './modulos/presupuestos.controller';
+import { ContratosController, PlantillasContratoController } from './modulos/contratos.controller';
+import { FirmarController } from './modulos/firmar.controller';
+import { FirmasService } from './modulos/firmas.service';
 import { ServiciosController, ServiciosService } from './modulos/servicios.controller';
 import { AvisosCorreoController } from './modulos/avisos-correo.controller';
 import { TelegramService } from './comun/telegram.service';
@@ -45,10 +48,13 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     CobrosController,
     CronController,
     PresupuestosController,
+    ContratosController,
+    PlantillasContratoController,
+    FirmarController,
     ServiciosController,
     AvisosCorreoController,
     TelegramController,
   ],
-  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, FirmasService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, { provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AppModule {}
