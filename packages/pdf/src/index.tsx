@@ -1,7 +1,7 @@
 import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer';
-import { bloquesContrato, ParteTexto } from '@stella/shared';
 import { aclarar, euros, fecha, fechaHora, nombreMes, num } from './formato';
-import { Estrella, PresupuestoPdf } from './presupuesto';
+import { ContratoPdf } from './contrato';
+import { PresupuestoPdf } from './presupuesto';
 
 /**
  * Plantilla del PDF de las facturas y los presupuestos. La usan la web (descargar,
@@ -209,65 +209,10 @@ export const titulo = (f: any) => (f.tipo_documento === 'contrato' ? `Contrato $
 /** Solo en el servidor: el PDF como Buffer (facturas, presupuestos y contratos) */
 export function pdfFacturaBuffer(f: any) {
   if (f.tipo_documento === 'presupuesto') return renderToBuffer(<PresupuestoPdf p={f} Certificado={PaginaCertificado} />);
-  return renderToBuffer(f.tipo_documento === 'contrato' ? <ContratoPdf c={f} /> : <FacturaPdf f={f} />);
+  return renderToBuffer(f.tipo_documento === 'contrato' ? <ContratoPdf c={f} Certificado={PaginaCertificado} /> : <FacturaPdf f={f} />);
 }
 
 // ───────────── Contratos y firma electrónica ─────────────
-
-const Rico = ({ partes }: { partes: ParteTexto[] }) => (
-  <>{partes.map((p, i) => <Text key={i} style={p.negrita ? s.fuerte : undefined}>{p.texto}</Text>)}</>
-);
-
-export function ContratoPdf({ c }: { c: any }) {
-  const e = c.empresa ?? {};
-  const color = e.color || '#1f6feb';
-  return (
-    <Document title={titulo(c)} author={e.nombre} creator="Stella ERP">
-      <Page size="A4" style={s.pagina}>
-        <View style={[s.fila, { justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 }]} fixed>
-          <View style={{ maxWidth: 300 }}>
-            {/* Sin logo subido, el de Stella: la estrella y el nombre en serifa, como en el presupuesto */}
-            {e.logo ? (
-              <>
-                <Image src={e.logo} style={{ height: 40, maxWidth: 200, objectFit: 'contain', objectPositionX: 0, marginBottom: 6 }} />
-                <Text style={[s.fuerte, { fontSize: 9.5 }]}>{e.nombre}</Text>
-              </>
-            ) : (
-              <View style={[s.fila, { alignItems: 'center', gap: 6 }]}>
-                <Estrella tam={13} />
-                <Text style={{ fontFamily: 'Fraunces', fontWeight: 600, fontSize: 17 }}>{e.nombre}</Text>
-              </View>
-            )}
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 13, fontWeight: 700, color }}>Contrato</Text>
-            <Text style={s.gris}>Nº {c.numero} · {fecha(c.fecha)}</Text>
-          </View>
-        </View>
-        {bloquesContrato(c.cuerpo ?? '').map((b, i) =>
-          b.tipo === 'titulo' ? (
-            <Text key={i} style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}><Rico partes={b.partes} /></Text>
-          ) : b.tipo === 'apartado' ? (
-            <Text key={i} style={{ fontSize: 10.5, fontWeight: 700, color, marginTop: 10, marginBottom: 5 }} minPresenceAhead={40}><Rico partes={b.partes} /></Text>
-          ) : b.tipo === 'lista' ? (
-            <View key={i} style={[s.fila, { marginBottom: 3, paddingLeft: 8 }]}>
-              <Text style={{ width: 10 }}>•</Text>
-              <Text style={{ flex: 1 }}><Rico partes={b.partes} /></Text>
-            </View>
-          ) : (
-            <Text key={i} style={{ marginBottom: 7, textAlign: 'justify' }}><Rico partes={b.partes} /></Text>
-          ),
-        )}
-        <Firmas f={c} />
-        <View style={[s.fila, s.pie]} fixed>
-          <Text style={{ flex: 1, paddingRight: 20 }}>{c.firma ? `Firmado electrónicamente · huella ${c.firma.huella.slice(0, 16)}…` : `${e.nombre} · Contrato ${c.numero}`}</Text>
-          <Text style={{ width: 90, textAlign: 'right' }} render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
-        </View>
-      </Page>
-      {c.firma && <PaginaCertificado f={c} />}
-    </Document>
-  );
-}
 
 /** Recuadros de firma: la empresa y el cliente (con su firma, si ya ha firmado) */
 function Firmas({ f }: { f: any }) {

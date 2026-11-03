@@ -7,13 +7,13 @@ import { fecha } from './formato';
  * cada grupo con sus totales. Lo usa la API (descarga, firma y copias firmadas).
  */
 
-const crema = '#fbf6ee';
-const papel = '#fffdf9';
-const oro = '#b08a52';
-const oroSuave = '#f3e8d6';
-const tinta = '#1d1a16';
-const gris = '#7b746a';
-const linea = '#e9dfcf';
+export const crema = '#fbf6ee';
+export const papel = '#fffdf9';
+export const oro = '#b08a52';
+export const oroSuave = '#f3e8d6';
+export const tinta = '#1d1a16';
+export const gris = '#7b746a';
+export const linea = '#e9dfcf';
 
 const s = StyleSheet.create({
   pagina: { backgroundColor: crema, paddingTop: 30, paddingBottom: 50, paddingHorizontal: 40, fontFamily: 'Inter', fontSize: 8.5, color: tinta },
@@ -36,7 +36,7 @@ const fechaCorta = (f: string) =>
 const cantidad = (n: number | string) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(Number(n));
 
 /** De #f2e3cf (arriba) a la crema del papel, en 64 franjas */
-const DEGRADADO = Array.from({ length: 64 }, (_, i) => {
+export const DEGRADADO = Array.from({ length: 64 }, (_, i) => {
   const t = i / 63;
   const mezcla = (a: number, b: number) => Math.round(a + (b - a) * t).toString(16).padStart(2, '0');
   return `#${mezcla(0xf2, 0xfb)}${mezcla(0xe3, 0xf6)}${mezcla(0xcf, 0xee)}`;
