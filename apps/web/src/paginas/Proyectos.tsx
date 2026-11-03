@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { calcularTotales, EstadoProyecto, nombreTipoProyecto, nombreTipoServicio, TIPOS_PROYECTO } from '@stella/shared';
 import { api } from '../lib/api';
+import { useIvaHabitual } from '../lib/empresa';
 import { euros, fecha, fechaCorta, nombreCompleto, nombreMes, num } from '../lib/formato';
 import {
   AreaTexto, Boton, Buscador, CabeceraDetalle, CabeceraLista, Campo, Cargando, ColorEtiqueta, Confirmar, Dato, Entrada, Etiqueta,
@@ -447,10 +448,11 @@ export function FormularioProyecto({ proyecto, clienteId, onCerrar, onCreada }: 
     presupuesto: proyecto?.presupuesto ?? '',
     horas_mes: proyecto?.horas_mes ?? '',
     precio_hora: proyecto?.precio_hora ?? '',
-    iva_pct: proyecto?.iva_pct ?? 21,
+    iva_pct: proyecto?.iva_pct ?? 0,
     retencion_pct: proyecto?.retencion_pct ?? 0,
     notas: proyecto?.notas ?? '',
   });
+  useIvaHabitual(!proyecto, (iva) => poner('iva_pct', iva));
   const porHoras = valores.modalidad === 'horas';
   const t = calcularTotales([{ cantidad: Number(valores.horas_mes) || 0, precio: Number(valores.precio_hora) || 0 }], Number(valores.iva_pct) || 0, Number(valores.retencion_pct) || 0);
 

@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, Cloud, Globe, KeyRound, LifeBuoy, Mail, Pencil, Play, Plus, Receipt, RefreshCw, Server, Trash2, Wrench } from 'lucide-react';
 import { importeMensual, nombreTipoServicio, PERIODICIDADES, sumarMeses, mesesPeriodicidad, TIPOS_SERVICIO } from '@stella/shared';
 import { api } from '../lib/api';
+import { useIvaHabitual } from '../lib/empresa';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
 import {
   AreaTexto, Boton, Buscador, CabeceraDetalle, CabeceraLista, Campo, Cargando, Confirmar, Dato, Entrada, Etiqueta, FilaLista, Filtros,
@@ -314,12 +315,13 @@ function FormularioServicio({ servicio, onCerrar, onCreado }: { servicio?: any; 
     precio: servicio?.precio ?? '',
     coste: servicio?.coste ?? '',
     periodicidad: servicio?.periodicidad ?? 'mensual',
-    iva_pct: servicio?.iva_pct ?? 21,
+    iva_pct: servicio?.iva_pct ?? 0,
     fecha_inicio: servicio?.fecha_inicio ?? hoyISO(),
     proxima_renovacion: servicio?.proxima_renovacion ?? hoyISO(),
     renovacion_auto: servicio?.renovacion_auto ?? true,
     notas: servicio?.notas ?? '',
   });
+  useIvaHabitual(!servicio, (iva) => poner('iva_pct', iva));
   const proyectosCliente = (proyectos ?? []).filter((p) => p.cliente_id === valores.cliente_id);
   const guardar = useMutation({
     mutationFn: () => (servicio ? api(`/servicios/${servicio.id}`, { method: 'PATCH', body: valores }) : api('/servicios', { method: 'POST', body: valores })),

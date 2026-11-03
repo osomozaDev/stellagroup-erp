@@ -29,7 +29,7 @@ const COLORES = ['#1f6feb', '#0b1220', '#0891b2', '#4338ca', '#0f766e', '#b91c1c
 const vacio = {
   nombre: '', cif: '', direccion: '', cp: '', ciudad: '', provincia: '', email: '', telefono: '', iban: '',
   serie_factura: 'F', numeracion: 'anual' as 'anual' | 'continua', proximo_numero: 1, forma_pago: 'Transferencia bancaria',
-  color: '#1f6feb', logo: '' as string | null, dias_vencimiento: 30, iva_pct: 21, ss_trabajador_pct: 6.5, ss_empresa_pct: 31.5, pie_factura: '',
+  color: '#1f6feb', logo: '' as string | null, dias_vencimiento: 30, iva_pct: 0, ss_trabajador_pct: 6.5, ss_empresa_pct: 31.5, pie_factura: '',
   validez_presupuesto_dias: 30, condiciones_presupuesto: '', accion_principal: 'presupuesto' as 'presupuesto' | 'facturar_mes',
 };
 

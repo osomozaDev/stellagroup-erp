@@ -133,7 +133,7 @@ export const proyectoSchema = z.object({
   presupuesto: numero.min(0).default(0),
   horas_mes: numero.min(0).default(0),
   precio_hora: numero.min(0).default(0),
-  iva_pct: numero.min(0).max(100).default(21),
+  iva_pct: numero.min(0).max(100).default(0),
   retencion_pct: numero.min(0).max(100).default(0),
   notas: texto,
 });
@@ -534,7 +534,7 @@ export const servicioSchema = z.object({
   precio: numero.min(0),
   coste: numero.min(0).default(0),
   periodicidad: z.enum(PERIODICIDADES.map((p) => p.clave) as [Periodicidad, ...Periodicidad[]]).default('mensual'),
-  iva_pct: numero.min(0).max(100).default(21),
+  iva_pct: numero.min(0).max(100).default(0),
   fecha_inicio: z.string().min(1, 'Pon la fecha de alta'),
   proxima_renovacion: z.string().min(1, 'Pon la fecha de la próxima renovación'),
   renovacion_auto: z.coerce.boolean().default(true),

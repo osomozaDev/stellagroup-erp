@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Pa
 import { calcularTotales, EstadoPresupuesto, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
 import { ElegirDelCatalogo } from './Catalogo';
 import { api, descargar } from '../lib/api';
+import { useIvaHabitual } from '../lib/empresa';
 import { euros, fecha, fechaCorta, hoyISO } from '../lib/formato';
 import {
   AreaTexto, Boton, Buscador, CabeceraDetalle, CabeceraLista, Campo, Cargando, ColorEtiqueta, Confirmar, Entrada, Etiqueta,
@@ -303,7 +304,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
     introduccion: presupuesto?.introduccion ?? '',
     fecha: presupuesto?.fecha ?? hoyISO(),
     valido_hasta: presupuesto?.valido_hasta ?? '',
-    iva_pct: presupuesto?.iva_pct ?? 21,
+    iva_pct: presupuesto?.iva_pct ?? 0,
     retencion_pct: presupuesto?.retencion_pct ?? 0,
     condiciones: presupuesto?.condiciones ?? '',
     notas: presupuesto?.notas ?? '',
@@ -314,6 +315,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
     ],
   );
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
+  useIvaHabitual(!presupuesto, (iva) => poner('iva_pct', iva));
   // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano
   const [aMano, setAMano] = useState<'lista' | 'texto'>(presupuesto && !presupuesto.cliente_id ? 'texto' : 'lista');
   const [catalogo, setCatalogo] = useState(false);

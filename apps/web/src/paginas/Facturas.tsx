@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ban, CalendarPlus, CheckCircle2, Download, FileMinus, FileSpreadsheet, FileText, History, Mail, Pencil, Plus, RotateCcw, Send, Share2, Trash2 } from 'lucide-react';
 import { calcularTotales, ejemploNumero } from '@stella/shared';
 import { api, bajarArchivo, descargar } from '../lib/api';
+import { useIvaHabitual } from '../lib/empresa';
 import { enTelegram } from '../lib/telegram';
 import { euros, fecha, fechaCorta, hoyISO, nombreMes } from '../lib/formato';
 import {
@@ -518,7 +519,7 @@ export function FormularioFactura({ factura, onCerrar, inicial }: { factura?: an
     fecha: factura?.fecha ?? hoyISO(),
     vencimiento: factura?.vencimiento ?? '',
     periodo: factura?.periodo?.slice(0, 7) ?? '',
-    iva_pct: factura?.iva_pct ?? 21,
+    iva_pct: factura?.iva_pct ?? 0,
     retencion_pct: factura?.retencion_pct ?? 0,
     notas: factura?.notas ?? '',
   }));
@@ -528,6 +529,7 @@ export function FormularioFactura({ factura, onCerrar, inicial }: { factura?: an
     ],
   );
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
+  useIvaHabitual(!factura && !inicial?.proyecto_id, (iva) => poner('iva_pct', iva));
 
   const proyectosCliente = (proyectos ?? []).filter((o) => o.cliente_id === v.cliente_id);
 
