@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Ban, Copy, Download, FileText, LayoutTemplate, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
+import { Ban, ClipboardCheck, Copy, Download, FileText, LayoutTemplate, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
 import { EstadoContrato, VARIABLES_CONTRATO } from '@stella/shared';
 import { api, descargar } from '../lib/api';
 import { fecha, fechaCorta, hoyISO } from '../lib/formato';
@@ -105,7 +105,8 @@ function DetalleContrato({ id }: { id: string }) {
   const navegar = useNavigate();
   // ?firmar=1: se llega desde el presupuesto para enviarlo a firmar directamente
   const [params, setParams] = useSearchParams();
-  const firmarAlEntrar = params.get('firmar') === '1';
+  const [firmar, setFirmar] = useState(params.get('firmar') === '1');
+  const [completar, setCompletar] = useState(false);
   const [editar, setEditar] = useState(false);
   const [anular, setAnular] = useState(false);
   const [borrar, setBorrar] = useState(false);
@@ -167,9 +168,14 @@ function DetalleContrato({ id }: { id: string }) {
         {faltan > 0 && c.estado !== 'anulado' && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <p className="flex-1 text-sm text-amber-900">
-              Le {faltan === 1 ? 'falta un dato' : `faltan ${faltan} datos`} (marcados en amarillo). Complétalos en el cliente, el proyecto o en «Mi empresa» y edita el contrato, o escríbelos a mano.
+              Le {faltan === 1 ? 'falta un dato' : `faltan ${faltan} datos`} (marcados en amarillo). Complétalos aquí mismo: se guardan en su ficha (cliente, proyecto o «Mi empresa») y en el contrato.
             </p>
-            {editable && <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>}
+            {editable && !pendiente && (
+              <div className="flex gap-2">
+                <Boton icono={<ClipboardCheck className="size-4" />} onClick={() => setCompletar(true)}>Completar datos</Boton>
+                <Boton variante="secundario" icono={<Pencil className="size-4" />} onClick={() => setEditar(true)}>Editar</Boton>
+              </div>
+            )}
           </div>
         )}
 
@@ -179,10 +185,12 @@ function DetalleContrato({ id }: { id: string }) {
             documento={c}
             puedeEnviar={['borrador', 'enviado', 'rechazado'].includes(c.estado) && faltan === 0}
             nombrePdf={nombrePdf}
-            abrirEnvio={firmarAlEntrar}
+            abrirEnvio={firmar}
             onEnvioAbierto={() => {
-              if (faltan > 0) avisar('Completa los datos que faltan (en amarillo) y luego envíalo a firmar', true);
-              setParams({}, { replace: true });
+              // Si faltan datos, primero el panel para completarlos; al terminar se abre el envío
+              if (faltan > 0 && editable && params.has('firmar')) setCompletar(true);
+              else setFirmar(false);
+              if (params.has('firmar')) setParams({}, { replace: true });
             }}
           />
         )}
@@ -199,6 +207,13 @@ function DetalleContrato({ id }: { id: string }) {
       </div>
 
       {editar && <FormularioContrato contrato={c} onCerrar={() => setEditar(false)} />}
+      {completar && (
+        <CompletarDatos
+          contratoId={c.id}
+          onCerrar={() => { setCompletar(false); setFirmar(false); }}
+          onCompleto={() => { setCompletar(false); setFirmar(false); setTimeout(() => setFirmar(true), 0); }}
+        />
+      )}
       <Confirmar
         abierto={anular}
         titulo="¿Anular este contrato?"
@@ -428,6 +443,88 @@ function Plantillas({ onCerrar }: { onCerrar: () => void }) {
         onNo={() => setBorrando(null)}
         onSi={() => { borrar.mutate(borrando.id); setBorrando(null); }}
       />
+    </Panel>
+  );
+}
+
+const TITULO_FICHA: Record<string, string> = { empresa: 'Mi empresa', cliente: 'Cliente', proyecto: 'Proyecto' };
+
+/**
+ * Panel con solo los datos que le faltan al contrato, agrupados por la ficha donde se
+ * guardan. Lo que no tiene ficha (o no puedes tocar) se escribe solo en este contrato.
+ */
+function CompletarDatos({ contratoId, onCerrar, onCompleto }: { contratoId: string; onCerrar: () => void; onCompleto: () => void }) {
+  const qc = useQueryClient();
+  const avisar = useAviso();
+  const { data, isLoading } = useQuery({ queryKey: ['contrato-faltan', contratoId], queryFn: () => api<any>(`/contratos/${contratoId}/faltan`) });
+  const [valores, setValores] = useState<Record<string, Record<string, string>>>({});
+  const [libres, setLibres] = useState<Record<string, string>>({});
+  const valor = (e: string, campo: string, actual: any) => valores[e]?.[campo] ?? (actual == null ? '' : String(actual));
+  const poner = (e: string, campo: string, v: string) => setValores((x) => ({ ...x, [e]: { ...x[e], [campo]: v } }));
+
+  const guardar = useMutation({
+    mutationFn: () => api<{ faltan: number }>(`/contratos/${contratoId}/completar`, { method: 'POST', body: { ...valores, libres } }),
+    onSuccess: async (r) => {
+      // Primero el contrato ya completo; si no, el envío vería los datos de antes
+      await qc.invalidateQueries();
+      if (r.faltan === 0) {
+        avisar('Datos completos: ya puedes enviarlo a firmar');
+        onCompleto();
+      } else {
+        avisar(`Guardado. Aún ${r.faltan === 1 ? 'falta 1 dato' : `faltan ${r.faltan} datos`}`, true);
+      }
+    },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+
+  return (
+    <Panel
+      abierto
+      onCerrar={onCerrar}
+      titulo="Completar datos"
+      pie={<><Boton variante="secundario" onClick={onCerrar}>Cancelar</Boton><Boton onClick={() => guardar.mutate()} cargando={guardar.isPending}>Guardar</Boton></>}
+    >
+      {isLoading || !data ? <Cargando /> : data.total === 0 ? (
+        <p className="text-sm text-slate-600">No falta nada: ya puedes enviarlo a firmar.</p>
+      ) : (
+        <div className="space-y-5">
+          <p className="text-sm text-slate-600">
+            {data.total === 1 ? 'Falta 1 dato' : `Faltan ${data.total} datos`} para poder enviarlo. Lo que pongas en una ficha se queda guardado para los siguientes contratos y facturas.
+          </p>
+          {data.fichas.map((f: any) => (
+            <section key={f.entidad} className="rounded-2xl border border-slate-200 p-4 space-y-3">
+              <div>
+                <p className="font-semibold">{TITULO_FICHA[f.entidad]}{f.entidad !== 'empresa' && f.nombre ? ` · ${f.nombre}` : ''}</p>
+                <p className="text-xs text-slate-500">Se guarda en {f.entidad === 'empresa' ? '«Mi empresa»' : `la ficha del ${f.entidad}`}</p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {f.campos.map((c: any) => (
+                  <Campo key={c.campo} etiqueta={c.etiqueta} className={c.campo === 'direccion' ? 'sm:col-span-2' : undefined}>
+                    <Entrada
+                      type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : c.tipo === 'email' ? 'email' : 'text'}
+                      value={valor(f.entidad, c.campo, c.valor)}
+                      onChange={(e) => poner(f.entidad, c.campo, e.target.value)}
+                    />
+                  </Campo>
+                ))}
+              </div>
+            </section>
+          ))}
+          {data.libres.length > 0 && (
+            <section className="rounded-2xl border border-marca-100 bg-marca-50/50 p-4 space-y-3">
+              <div>
+                <p className="font-semibold">Este contrato</p>
+                <p className="text-xs text-slate-500">Solo se escribe en este contrato</p>
+              </div>
+              {data.libres.map((l: any) => (
+                <Campo key={l.marcador} etiqueta={l.etiqueta}>
+                  <Entrada value={libres[l.marcador] ?? ''} onChange={(e) => setLibres((x) => ({ ...x, [l.marcador]: e.target.value }))} />
+                </Campo>
+              ))}
+            </section>
+          )}
+        </div>
+      )}
     </Panel>
   );
 }

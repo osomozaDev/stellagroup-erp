@@ -11,6 +11,7 @@ import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { remitenteDe } from '../comun/remitente';
 import { textoDeContrato } from '../comun/contrato-de-plantilla';
+import { completarDatos, datosQueFaltan } from '../comun/datos-contrato';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
@@ -47,6 +48,19 @@ export class ContratosController {
     @Query('fecha') fecha?: string,
   ) {
     return textoDeContrato(this.db, { plantillaId, clienteId, proyectoId, presupuestoId, fecha });
+  }
+
+  /** Los datos que faltan para poder enviarlo a firmar, por ficha (Mi empresa, cliente, proyecto o solo el contrato) */
+  @Get(':id/faltan')
+  faltan(@Param('id') id: string, @Req() req: any) {
+    return datosQueFaltan(this.db, id, req.perfil);
+  }
+
+  /** Guarda en sus fichas lo completado y lo pone en el texto del contrato */
+  @Post(':id/completar')
+  async completar(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    await this.firmas.comprobarEditable('contrato', id);
+    return completarDatos(this.db, id, req.perfil, body ?? {});
   }
 
   @Get(':id')
