@@ -1,3 +1,4 @@
+import { etiquetaNif, FORMAS_PAGO } from '@stella/shared';
 import { aclarar, euros, fecha, nombreMes, num } from '../lib/formato';
 
 /** Vista en pantalla de la factura o el presupuesto. Imita el PDF (@stella/pdf): si cambias uno, cambia el otro. */
@@ -16,7 +17,7 @@ export default function FacturaDocumento({ f }: { f: any }) {
           <div className="text-slate-500 leading-5">
             {e.logo && <img src={e.logo} alt="" className="h-16 max-w-64 object-contain object-left mb-2" />}
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{e.nombre}</p>
-            {e.cif && <p>CIF {e.cif}</p>}
+            {e.cif && <p>{etiquetaNif(e.cif)} {e.cif}</p>}
             {e.direccion && <p>{e.direccion}</p>}
             <p>{linea(e.cp, e.ciudad, e.provincia && `(${e.provincia})`)}</p>
             <p>{[e.telefono, e.email].filter(Boolean).join(' · ')}</p>
@@ -83,8 +84,9 @@ export default function FacturaDocumento({ f }: { f: any }) {
 
         <section className="mt-5 flex justify-end">
           <dl className="w-full @lg:w-80 space-y-1.5">
-            <Fila t="Base imponible" v={euros(f.base)} />
-            <Fila t={`IVA ${num(f.iva_pct)} %`} v={euros(f.iva_importe)} />
+            {/* Sin IVA ni retención, solo el total */}
+            {(Number(f.iva_pct) > 0 || Number(f.retencion_pct) > 0) && <Fila t="Base imponible" v={euros(f.base)} />}
+            {Number(f.iva_pct) > 0 && <Fila t={`IVA ${num(f.iva_pct)} %`} v={euros(f.iva_importe)} />}
             {Number(f.retencion_pct) > 0 && <Fila t={`Retención IRPF ${num(f.retencion_pct)} %`} v={`– ${euros(f.retencion_importe)}`} />}
             <div className="flex items-center justify-between rounded-lg px-4 py-3 mt-3 text-white" style={{ background: color }}>
               <dt className="font-semibold">Total</dt>
@@ -97,7 +99,14 @@ export default function FacturaDocumento({ f }: { f: any }) {
           <footer className="mt-8 pt-4 border-t border-slate-100 space-y-4">
             <div>
               <p className="text-xs text-slate-500">Condiciones</p>
-              <p className="whitespace-pre-line">{f.condiciones || e.condiciones_presupuesto || 'Precios sin IVA salvo que se indique. Forma de pago: 50 % al aceptar y 50 % a la entrega.'}</p>
+              <p>Forma de pago: {(FORMAS_PAGO[f.forma_pago as keyof typeof FORMAS_PAGO] ?? FORMAS_PAGO.dos).condicion}.</p>
+              {e.iban && <p>Pago por transferencia: <span className="font-semibold tracking-wide">{e.iban}</span> (titular: {e.nombre}).</p>}
+              <p className="whitespace-pre-line">
+                {String(f.condiciones || e.condiciones_presupuesto || (Number(f.iva_pct) > 0 ? 'Precios sin IVA salvo que se indique.' : ''))
+                  .split('\n')
+                  .filter((x) => !/^\s*forma de pago/i.test(x))
+                  .join('\n')}
+              </p>
             </div>
             {f.notas && <p className="text-slate-500 whitespace-pre-line">{f.notas}</p>}
           </footer>

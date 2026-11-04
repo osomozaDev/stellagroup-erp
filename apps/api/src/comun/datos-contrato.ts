@@ -21,7 +21,7 @@ const DIRECCION: Campo[] = [
 /** Qué campos de qué ficha rellenan cada dato de la plantilla */
 const MAPA: Record<string, [Entidad, Campo[]]> = {
   'empresa.nombre': ['empresa', [{ campo: 'nombre', etiqueta: 'Nombre o razón social' }]],
-  'empresa.cif': ['empresa', [{ campo: 'cif', etiqueta: 'CIF / NIF' }]],
+  'empresa.cif': ['empresa', [{ campo: 'cif', etiqueta: 'CIF o DNI' }]],
   'empresa.direccion_completa': ['empresa', DIRECCION],
   'empresa.ciudad': ['empresa', [{ campo: 'ciudad', etiqueta: 'Ciudad' }]],
   'fecha.ciudad': ['empresa', [{ campo: 'ciudad', etiqueta: 'Ciudad' }]],

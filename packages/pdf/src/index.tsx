@@ -1,4 +1,5 @@
 import { Document, Font, Image, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer';
+import { etiquetaNif } from '@stella/shared';
 import { aclarar, euros, fecha, fechaHora, nombreMes, num } from './formato';
 import { ContratoPdf } from './contrato';
 import { PresupuestoPdf } from './presupuesto';
@@ -256,7 +257,7 @@ function PaginaCertificado({ f }: { f: any }) {
   const color = e.color || '#1f6feb';
   const filas: [string, string][] = [
     ['Documento', `${titulo(f)} · ${f.titulo ?? ''}`],
-    ['Emisor', `${e.nombre}${e.cif ? ` · CIF ${e.cif}` : ''}`],
+    ['Emisor', `${e.nombre}${e.cif ? ` · ${etiquetaNif(e.cif)} ${e.cif}` : ''}`],
     ['Firmante', `${x.nombre}${x.nif ? ` · NIF ${x.nif}` : ''}${f.cliente?.nombre ? ` · en nombre de ${f.cliente.nombre}` : ''}`],
     ['Correo verificado', x.email],
     ['Enviado para firmar', `${fechaHora(x.enviado_en)}${x.enviado_por ? ` por ${x.enviado_por}` : ''}`],

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { lineaDeCatalogo } from '@stella/shared';
+import { FORMAS_PAGO, FormaPago, lineaDeCatalogo } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { busqueda, ok } from '../comun/db';
 import { fichaDeTexto } from '../comun/alta-cliente';
@@ -20,7 +20,7 @@ export const PREGUNTA_DATO = '✏️ Falta en el contrato';
 export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['np', 'pa', 'pw', 'pq', 'pl', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
+const ACCIONES = new Set(['np', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
 
 const TITULO_PROVISIONAL = 'Presupuesto';
 const SUFIJO: Record<string, string> = { mes: '/mes', 'año': '/año' };
@@ -161,7 +161,7 @@ export class PresupuestosTelegramService {
     const e = ok(await this.db.from('empresa').select('iva_pct').eq('id', 1).single()) as any;
     const p = await this.presupuestos.crear({
       cliente_id: clienteId, cliente_texto: null, titulo: TITULO_PROVISIONAL, introduccion: null, fecha: hoyMadrid(), valido_hasta: null,
-      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, condiciones: null, notas: null, lineas: [],
+      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, forma_pago: 'unico', condiciones: null, notas: null, lineas: [],
     });
     const { texto, botones } = await this.tarjeta(p.id);
     return this.telegram.enviar(chatId, texto, botones);
@@ -179,7 +179,9 @@ export class PresupuestosTelegramService {
       ...(p.titulo !== TITULO_PROVISIONAL ? [html(p.titulo)] : []),
       '',
       ...(lineas.length ? lineas : ['Aún no tiene partidas.']),
-      ...(lineas.length ? ['', `Base: ${euros(Number(p.base))} · IVA ${iva} %: ${euros(Number(p.iva_importe))}`, `<b>Total: ${euros(Number(p.total))}</b>`] : []),
+      // Sin IVA (mientras se contrata como particular), solo el total
+      ...(lineas.length && this.hayPagoUnico(p) ? ['', `💶 ${html(FORMAS_PAGO[p.forma_pago as FormaPago]?.nombre ?? '')}`] : []),
+      ...(lineas.length ? ['', ...(iva > 0 ? [`Base: ${euros(Number(p.base))} · IVA ${iva} %: ${euros(Number(p.iva_importe))}`] : []), `<b>Total: ${euros(Number(p.total))}</b>`] : []),
     ].join('\n');
   }
 
@@ -195,8 +197,8 @@ export class PresupuestosTelegramService {
     return { p, texto, botones };
   }
 
-  /** Cambia las partidas (solo en borrador) con la misma lógica que la app */
-  private async cambiarPartidas(id: string, cambio: (lineas: any[]) => any[]) {
+  /** Cambia las partidas y, si se pasa, la forma de pago (solo en borrador) con la misma lógica que la app */
+  private async cambiarPartidas(id: string, cambio: (lineas: any[]) => any[], formaPago?: FormaPago) {
     const p = await this.cargar(id);
     if (p.estado !== 'borrador') throw new BadRequestException('Este presupuesto ya se ha enviado: cámbialo desde la app.');
     const actuales = (p.lineas ?? []).map((l: any) => ({ concepto: l.concepto, cantidad: Number(l.cantidad), unidad: l.unidad, precio: Number(l.precio) }));
@@ -207,8 +209,33 @@ export class PresupuestosTelegramService {
     const titulo = automatico ? (principal ? nombreDe(principal.concepto) : TITULO_PROVISIONAL) : p.titulo;
     await this.presupuestos.editar(id, {
       cliente_id: p.cliente_id, cliente_texto: p.cliente_texto, titulo, introduccion: p.introduccion, fecha: p.fecha, valido_hasta: p.valido_hasta,
-      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), condiciones: p.condiciones, notas: p.notas, lineas,
+      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), forma_pago: formaPago ?? p.forma_pago, condiciones: p.condiciones, notas: p.notas, lineas,
     });
+  }
+
+  private hayPagoUnico(p: any) {
+    return (p.lineas ?? []).some((l: any) => l.unidad !== 'mes' && l.unidad !== 'año');
+  }
+
+  /** Al terminarlo: cómo se paga lo de pago único; si no lo hay, directamente las cuotas */
+  private async preguntarPago(id: string, puede: Puede) {
+    const p = await this.cargar(id);
+    if (!this.hayPagoUnico(p)) return this.preguntarCuotas(id, puede);
+    const botones: Botones = (Object.entries(FORMAS_PAGO) as [FormaPago, (typeof FORMAS_PAGO)[FormaPago]][]).map(([clave, f]) => [
+      { text: `${p.forma_pago === clave ? '✓ ' : ''}${f.nombre}`, callback_data: `pf:${id}:${clave}` },
+    ]);
+    return { texto: [this.resumen(p), '', '💶 ¿Cómo paga lo que es de pago único?'].join('\n'), botones, p };
+  }
+
+  /** Con cuotas mensuales: seguir cada mes o pasarlas a un pago al año (doce cuotas) */
+  private async preguntarCuotas(id: string, puede: Puede) {
+    const p = await this.cargar(id);
+    if (!(p.lineas ?? []).some((l: any) => l.unidad === 'mes')) return this.final(id, puede);
+    return {
+      texto: [this.resumen(p), '', '📅 Las cuotas mensuales (mantenimiento, QR…), ¿se pagan cada mes o en un pago al año?'].join('\n'),
+      botones: [[{ text: 'Cada mes', callback_data: `pm:${id}:mes` }, { text: 'Un pago al año', callback_data: `pm:${id}:año` }]] as Botones,
+      p,
+    };
   }
 
   private async partidaEscrita(chatId: number, id: string, texto: string, puede: Puede) {
@@ -217,7 +244,7 @@ export class PresupuestosTelegramService {
     if (!linea) {
       await this.telegram.enviar(chatId, 'No lo he entendido. Escribe el concepto y el precio, p. ej. «Logotipo 150» o «Hosting 10 al mes».');
       const p = await this.cargar(id);
-      return this.preguntar(chatId, `${PREGUNTA_PARTIDA} ${p.numero}: concepto y precio sin IVA (p. ej. «Logotipo 150» o «Hosting 10 al mes»)`, 'Concepto y precio…');
+      return this.preguntar(chatId, `${PREGUNTA_PARTIDA} ${p.numero}: concepto y precio (p. ej. «Logotipo 150» o «Hosting 10 al mes»)`, 'Concepto y precio…');
     }
     await this.cambiarPartidas(id, (ls) => [...ls, linea]);
     const { texto: t, botones } = await this.tarjeta(id, `➕ Añadido: ${html(linea.concepto)}`);
@@ -233,6 +260,7 @@ export class PresupuestosTelegramService {
     if (['borrador', 'enviado'].includes(p.estado) && puede('POST', `/presupuestos/${id}/firma`)) fila.push({ text: p.estado === 'enviado' ? '📧 Volver a enviar' : '📧 Enviar al cliente', callback_data: `pe:${id}` });
     fila.push({ text: '📥 PDF', callback_data: `pp:${id}` });
     filas.push(fila);
+    if (p.estado === 'borrador' && puede('PATCH', `/presupuestos/${id}`)) filas.push([{ text: '💶 Cambiar la forma de pago', callback_data: `pg:${id}` }]);
     if (vivo) filas.push([{ text: `📄 Ver contrato ${vivo.numero}`, callback_data: `cf:${vivo.id}` }]);
     else if (p.estado !== 'rechazado' && puede('POST', `/presupuestos/${id}/contrato`)) filas.push([{ text: '📄 Pasar a contrato', callback_data: `pc:${id}` }]);
     filas.push([this.telegram.abrir('Abrir presupuesto', `/presupuestos/${id}`)]);
@@ -244,19 +272,19 @@ export class PresupuestosTelegramService {
 
   private async crearContrato(chatId: number, id: string, texto: string, puede: Puede) {
     if (!puede('POST', `/presupuestos/${id}/contrato`)) return this.telegram.enviar(chatId, 'No tienes permiso para hacer contratos.');
-    const [plazo, hora] = (texto.match(/\d+(?:[.,]\d+)?/g) ?? []).map((n) => Number(n.replace(',', '.')));
-    if (!plazo || hora == null) {
-      await this.telegram.enviar(chatId, 'Necesito dos números: los días de plazo y el precio por hora, p. ej. «30 45».');
+    const plazo = Number(texto.match(/\d+/)?.[0]);
+    if (!plazo) {
+      await this.telegram.enviar(chatId, 'Necesito los días de plazo de entrega, p. ej. «15».');
       return this.pedirDatosContrato(chatId, id);
     }
-    const c = await this.presupuestos.aContrato(id, { plazo_dias: Math.round(plazo), precio_hora: hora });
+    const c = await this.presupuestos.aContrato(id, { plazo_dias: plazo });
     const { texto: t, botones } = await this.tarjetaContrato(c.id, puede, c.existente ? 'Este presupuesto ya tenía contrato.' : '✅ Contrato creado con el presupuesto como Anexo I.');
     return this.telegram.enviar(chatId, t, botones);
   }
 
   private async pedirDatosContrato(chatId: number, id: string) {
     const p = ok(await this.db.from('presupuestos').select('numero').eq('id', id).single()) as any;
-    return this.preguntar(chatId, `${PREGUNTA_CONTRATO} ${p.numero}: plazo de entrega en días hábiles y precio por hora de los cambios, sin IVA (p. ej. «30 45»)`, 'Días y € por hora…');
+    return this.preguntar(chatId, `${PREGUNTA_CONTRATO} ${p.numero}: plazo de entrega en días naturales (lo normal, «15»)`, 'Días de plazo…');
   }
 
   private async tarjetaContrato(id: string, puede: Puede, nota?: string) {
@@ -328,7 +356,7 @@ export class PresupuestosTelegramService {
         if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
         await responder();
         const p = ok(await this.db.from('presupuestos').select('numero').eq('id', id).single()) as any;
-        return this.preguntar(chatId, `${PREGUNTA_PARTIDA} ${p.numero}: concepto y precio sin IVA (p. ej. «Logotipo 150» o «Hosting 10 al mes»)`, 'Concepto y precio…');
+        return this.preguntar(chatId, `${PREGUNTA_PARTIDA} ${p.numero}: concepto y precio (p. ej. «Logotipo 150» o «Hosting 10 al mes»)`, 'Concepto y precio…');
       }
 
       case 'pq': {
@@ -338,9 +366,33 @@ export class PresupuestosTelegramService {
         return editar(await this.tarjeta(id));
       }
 
-      case 'pl':
+      // Al terminar un borrador, antes de nada, cómo se paga
+      case 'pl': {
         await responder();
+        const p = await this.cargar(id);
+        return editar(p.estado === 'borrador' && puede('PATCH', `/presupuestos/${id}`) ? await this.preguntarPago(id, puede) : await this.final(id, puede));
+      }
+
+      case 'pg':
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        await responder();
+        return editar(await this.preguntarPago(id, puede));
+
+      case 'pf': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        if (!extra || !(extra in FORMAS_PAGO)) return responder();
+        await this.cambiarPartidas(id, (ls) => ls, extra as FormaPago);
+        await responder(`💶 ${FORMAS_PAGO[extra as FormaPago].nombre}`);
+        return editar(await this.preguntarCuotas(id, puede));
+      }
+
+      case 'pm': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        // Un pago al año: cada cuota mensual pasa a anual por doce veces su precio
+        if (extra === 'año') await this.cambiarPartidas(id, (ls) => ls.map((l) => (l.unidad === 'mes' ? { ...l, unidad: 'año', precio: Math.round(l.precio * 12 * 100) / 100 } : l)));
+        await responder(extra === 'año' ? '📅 Un pago al año' : '📅 Cada mes');
         return editar(await this.final(id, puede));
+      }
 
       // Primer toque: pregunta antes de escribir al cliente
       case 'pe': {

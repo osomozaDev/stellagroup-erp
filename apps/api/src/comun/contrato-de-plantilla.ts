@@ -20,7 +20,7 @@ export async function textoDeContrato(
     db.from('clientes').select('*').eq('id', a.clienteId).single().then((r) => ok(r)),
     a.proyectoId ? db.from('proyectos').select('*').eq('id', a.proyectoId).single().then((r) => ok(r)) : null,
     a.presupuestoId ? db.from('presupuestos').select('*, lineas:presupuesto_lineas(*)').eq('id', a.presupuestoId).single().then((r) => ok(r) as any) : null,
-    db.from('servicios').select('nombre, detalle, precio, periodicidad').eq('cliente_id', a.clienteId).eq('estado', 'activo').order('nombre').then((r) => ok(r) as any[]),
+    db.from('servicios').select('nombre, detalle, precio, periodicidad, iva_pct').eq('cliente_id', a.clienteId).eq('estado', 'activo').order('nombre').then((r) => ok(r) as any[]),
   ]);
   // Sin proyecto elegido, el del presupuesto
   const proyectoFinal = proyecto ?? (presupuesto?.proyecto_id ? ok(await db.from('proyectos').select('*').eq('id', presupuesto.proyecto_id).single()) : null);

@@ -1,5 +1,5 @@
 import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
-import { bloquesContrato, BloqueContrato, ParteTexto } from '@stella/shared';
+import { bloquesContrato, BloqueContrato, etiquetaNif, ParteTexto } from '@stella/shared';
 import { fecha, fechaHora } from './formato';
 import { DEGRADADO, Estrella, gris, linea, oro, oroSuave, tinta } from './presupuesto';
 
@@ -77,6 +77,18 @@ const Parte = ({ titulo, partes }: { titulo: string; partes: ParteTexto[] }) => 
   </View>
 );
 
+/** «Cuenta para los pagos: ES31 … · Titular: …»: el IBAN en grande, en su recuadro, para que se copie sin errores */
+const Cuenta = ({ texto }: { texto: string }) => {
+  const [iban, titular] = texto.replace(/^Cuenta para los pagos:\s*/i, '').split(/\s*·\s*Titular:\s*/i);
+  return (
+    <View style={{ borderWidth: 0.8, borderColor: oro, borderRadius: 8, backgroundColor: oroSuave, paddingVertical: 9, paddingHorizontal: 12, marginTop: 2, marginBottom: 8 }} wrap={false}>
+      <Text style={[s.etiqueta, { marginBottom: 4 }]}>Cuenta para los pagos · transferencia bancaria</Text>
+      <Text style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.6 }}>{iban}</Text>
+      {titular && <Text style={[s.gris, { marginTop: 3 }]}>Titular: {titular}</Text>}
+    </View>
+  );
+};
+
 const Punto = ({ partes }: { partes: ParteTexto[] }) => (
   <View style={[s.fila, { marginBottom: 3, paddingLeft: 4 }]}>
     <Text style={{ width: 10, color: oro, fontWeight: 700 }}>•</Text>
@@ -123,6 +135,7 @@ function Cuerpo({ bloques, firmas }: { bloques: BloqueContrato[]; firmas: any })
         if (b.tipo === 'parrafo') {
           if (seccion === 'reunidos' && /^De una parte/i.test(t)) return <Parte key={i} titulo="El Prestador" partes={b.partes} />;
           if (seccion === 'reunidos' && /^De otra parte/i.test(t)) return <Parte key={i} titulo="El Cliente" partes={b.partes} />;
+          if (/^Cuenta para los pagos:/i.test(t)) return <Cuenta key={i} texto={t} />;
           // Un párrafo que es solo una negrita corta en el Anexo es el nombre de un grupo de partidas
           if (seccion === 'anexo' && b.partes.length === 1 && b.partes[0].negrita && t.length < 40) return <Grupo key={i} texto={t} />;
           return <Text key={i} style={s.parrafo}><Rico partes={b.partes} /></Text>;
@@ -144,7 +157,7 @@ function Firmas({ c }: { c: any }) {
         <View style={{ height: 56 }} />
         <View style={{ borderTopWidth: 0.8, borderTopColor: tinta, paddingTop: 6 }}>
           <Text style={s.fuerte}>El Prestador · {e.nombre}</Text>
-          <Text style={s.gris}>{e.cif ? `CIF ${e.cif}` : 'Nombre, firma y DNI'}</Text>
+          <Text style={s.gris}>{e.cif ? `${etiquetaNif(e.cif)} ${e.cif}` : 'Nombre, firma y DNI'}</Text>
         </View>
       </View>
       <View style={{ flex: 1 }}>
@@ -194,6 +207,7 @@ export function ContratoPdf({ c, Certificado }: { c: any; Certificado?: (props: 
           )}
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontWeight: 700, fontSize: 8 }}>{e.nombre}</Text>
+            {e.cif && <Text style={[s.gris, { fontSize: 7.5, marginTop: 2 }]}>{etiquetaNif(e.cif)} {e.cif}</Text>}
             {contacto && <Text style={[s.gris, { fontSize: 7.5, marginTop: 2 }]}>{contacto}</Text>}
           </View>
         </View>

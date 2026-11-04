@@ -74,8 +74,10 @@ export default function Ajustes() {
 
         <Tarjeta titulo="Datos fiscales">
           <div className="grid sm:grid-cols-2 gap-4">
-            <Campo etiqueta="Razón social" className="sm:col-span-2"><Entrada {...campo('nombre')} /></Campo>
-            <Campo etiqueta="CIF"><Entrada {...campo('cif')} /></Campo>
+            <Campo etiqueta="Nombre o razón social" ayuda="Si trabajas como particular, tu nombre y apellidos: es quien sale en los presupuestos, contratos y correos." className="sm:col-span-2">
+              <Entrada {...campo('nombre')} />
+            </Campo>
+            <Campo etiqueta="CIF o DNI"><Entrada {...campo('cif')} /></Campo>
             <Campo etiqueta="Teléfono"><Entrada {...campo('telefono')} /></Campo>
             <Campo etiqueta="Correo" className="sm:col-span-2"><Entrada type="email" {...campo('email')} /></Campo>
             <Campo etiqueta="Dirección" className="sm:col-span-2"><Entrada {...campo('direccion')} /></Campo>

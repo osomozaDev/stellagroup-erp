@@ -1,4 +1,5 @@
 import { Document, Image, Page, Path, StyleSheet, Svg, Text, View } from '@react-pdf/renderer';
+import { etiquetaNif, FORMAS_PAGO } from '@stella/shared';
 import { fecha } from './formato';
 
 /**
@@ -86,7 +87,7 @@ const FilaTotal = ({ t, v, grande }: { t: string; v: string; grande?: boolean })
 export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (props: { f: any }) => any }) {
   const e = p.empresa ?? {};
   const c = p.cliente ?? {};
-  const iva = Number(p.iva_pct ?? 21);
+  const iva = Number(p.iva_pct ?? 0);
   const ret = Number(p.retencion_pct ?? 0);
   const lineas: any[] = [...(p.lineas ?? [])].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
   const grupos = GRUPOS.map((g) => ({ ...g, lineas: lineas.filter((l) => grupoDe(l.unidad) === g.clave) })).filter((g) => g.lineas.length);
@@ -95,7 +96,13 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
   const hayCuotas = grupos.some((g) => g.clave !== 'unico');
   const contacto = [e.telefono, e.email].filter(Boolean).join(' · ');
   const direccionCliente = c.lineas ? c.direccion : [c.direccion, [c.cp, c.ciudad].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  const condiciones = String(p.condiciones || e.condiciones_presupuesto || 'Precios sin IVA.').split('\n').map((x) => x.trim().replace(/^[-•]\s*/, '')).filter(Boolean);
+  // La forma de pago es la del presupuesto: la de las condiciones de siempre, si la hubiera, no se repite
+  const formaPago = FORMAS_PAGO[p.forma_pago as keyof typeof FORMAS_PAGO] ?? FORMAS_PAGO.dos;
+  const condiciones = [
+    `Forma de pago: ${formaPago.condicion}.`,
+    ...(e.iban ? [`Pago por transferencia: ${e.iban} (titular: ${e.nombre}).`] : []),
+    ...String(p.condiciones || e.condiciones_presupuesto || (iva > 0 ? 'Precios sin IVA.' : '')).split('\n').map((x) => x.trim().replace(/^[-•]\s*/, '')).filter((x) => x && !/^forma de pago/i.test(x)),
+  ];
   const firma = p.firma;
 
   return (
@@ -115,6 +122,7 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontWeight: 700, fontSize: 8 }}>{e.nombre}</Text>
+            {e.cif && <Text style={[s.gris, { fontSize: 7.5, marginTop: 2 }]}>{etiquetaNif(e.cif)} {e.cif}</Text>}
             {contacto && <Text style={[s.gris, { fontSize: 7.5, marginTop: 2 }]}>{contacto}</Text>}
           </View>
         </View>
@@ -158,7 +166,7 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
           <Text style={[s.serif, { fontSize: 15 }]}>
             Servicios <Text style={{ fontFamily: 'Fraunces', fontStyle: 'italic', fontWeight: 500, color: oro }}>propuestos</Text>
           </Text>
-          <Text style={[s.gris, { fontSize: 7 }]}>Precios sin IVA</Text>
+          {iva > 0 && <Text style={[s.gris, { fontSize: 7 }]}>Precios sin IVA</Text>}
         </View>
         <View style={[s.fila, { marginTop: 6, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: oro }]}>
           <Text style={[s.etiqueta, { flex: 1, paddingLeft: 8 }]}>Concepto</Text>
@@ -197,15 +205,16 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
           </View>
           <View style={[s.tarjeta, { flex: 1, paddingVertical: 11, paddingHorizontal: 14 }]}>
             {hayCuotas && <Text style={[s.etiqueta, { color: oro, marginBottom: 4 }]}>Pago único</Text>}
-            <FilaTotal t="Base imponible" v={precio(base('unico'))} />
-            <FilaTotal t={`IVA ${cantidad(iva)} %`} v={precio(Math.round(base('unico') * iva) / 100)} />
+            {/* Sin IVA ni retención, solo el total */}
+            {(iva > 0 || ret > 0) && <FilaTotal t="Base imponible" v={precio(base('unico'))} />}
+            {iva > 0 && <FilaTotal t={`IVA ${cantidad(iva)} %`} v={precio(Math.round(base('unico') * iva) / 100)} />}
             {ret > 0 && <FilaTotal t={`Retención IRPF ${cantidad(ret)} %`} v={`– ${precio(Math.round(base('unico') * ret) / 100)}`} />}
             <FilaTotal t="Total" v={precio(Math.round(base('unico') * (100 + iva - ret)) / 100)} grande />
             {hayCuotas && (
               <>
                 <Text style={[s.etiqueta, { color: oro, marginTop: 12, marginBottom: 4 }]}>Cuotas</Text>
-                {base('anual') > 0 && <FilaTotal t="Anual + IVA" v={`${precio(conIva(base('anual')))}/año`} />}
-                {base('mensual') > 0 && <FilaTotal t="Mensual + IVA" v={`${precio(conIva(base('mensual')))}/mes`} />}
+                {base('anual') > 0 && <FilaTotal t={iva > 0 ? 'Anual + IVA' : 'Anual'} v={`${precio(conIva(base('anual')))}/año`} />}
+                {base('mensual') > 0 && <FilaTotal t={iva > 0 ? 'Mensual + IVA' : 'Mensual'} v={`${precio(conIva(base('mensual')))}/mes`} />}
               </>
             )}
           </View>

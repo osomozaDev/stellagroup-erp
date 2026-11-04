@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
-import { calcularTotales, EstadoPresupuesto, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
+import { calcularTotales, EstadoPresupuesto, FORMAS_PAGO, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
 import { ElegirDelCatalogo } from './Catalogo';
 import { api, descargar } from '../lib/api';
 import { useIvaHabitual } from '../lib/empresa';
@@ -306,6 +306,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
     valido_hasta: presupuesto?.valido_hasta ?? '',
     iva_pct: presupuesto?.iva_pct ?? 0,
     retencion_pct: presupuesto?.retencion_pct ?? 0,
+    forma_pago: presupuesto?.forma_pago ?? 'unico',
     condiciones: presupuesto?.condiciones ?? '',
     notas: presupuesto?.notas ?? '',
   }));
@@ -430,6 +431,11 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
           <Campo etiqueta="IVA %"><Entrada type="number" inputMode="decimal" value={v.iva_pct} onChange={(e) => poner('iva_pct', e.target.value)} /></Campo>
           <Campo etiqueta="Retención IRPF %" ayuda="Solo si el cliente te retiene IRPF"><Entrada type="number" inputMode="decimal" value={v.retencion_pct} onChange={(e) => poner('retencion_pct', e.target.value)} /></Campo>
         </div>
+        <Campo etiqueta="Forma de pago" ayuda="De lo que es de pago único. Las cuotas se pagan por meses o por años según la unidad de cada partida.">
+          <Selector value={v.forma_pago} onChange={(e) => poner('forma_pago', e.target.value)}>
+            {Object.entries(FORMAS_PAGO).map(([clave, f]) => <option key={clave} value={clave}>{f.nombre}: {f.condicion}</option>)}
+          </Selector>
+        </Campo>
         <Campo etiqueta="Condiciones" ayuda="Si lo dejas vacío, salen las de «Mi empresa»">
           <AreaTexto rows={3} value={v.condiciones} onChange={(e) => poner('condiciones', e.target.value)} placeholder={empresa?.condiciones_presupuesto ?? ''} />
         </Campo>
@@ -448,7 +454,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
 
 /**
  * El contrato que sale de este presupuesto: si aún no hay, se crea en un paso con la
- * plantilla (por defecto, la de servicios web), el plazo de entrega y el precio por hora,
+ * plantilla (por defecto, la de servicios web) y el plazo de entrega,
  * y se puede ir directamente a enviarlo a firmar.
  */
 function ContratoDelPresupuesto({ p }: { p: any }) {
@@ -461,13 +467,12 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
   const porDefecto = (activas.find((x) => /servicios web/i.test(x.nombre)) ?? activas.find((x) => /desarrollo/i.test(x.nombre)) ?? activas[0])?.id ?? '';
   const [plantilla, setPlantilla] = useState('');
   const [plazo, setPlazo] = useState('');
-  const [precioHora, setPrecioHora] = useState('');
 
   const crear = useMutation({
     mutationFn: (_firmar: boolean) =>
       api<any>(`/presupuestos/${p.id}/contrato`, {
         method: 'POST',
-        body: { plantilla_id: plantilla || porDefecto || null, plazo_dias: plazo || null, precio_hora: precioHora === '' ? null : precioHora },
+        body: { plantilla_id: plantilla || porDefecto || null, plazo_dias: plazo || null },
       }),
     onSuccess: (c, firmar) => {
       qc.invalidateQueries();
@@ -512,8 +517,7 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
               {activas.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
             </Selector>
           </Campo>
-          <Campo etiqueta="Plazo de entrega (días hábiles)"><Entrada type="number" inputMode="numeric" min={1} value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="20" /></Campo>
-          <Campo etiqueta="Precio por hora de cambios €"><Entrada type="number" inputMode="decimal" min={0} value={precioHora} onChange={(e) => setPrecioHora(e.target.value)} placeholder="40" /></Campo>
+          <Campo etiqueta="Plazo de entrega (días naturales)" ayuda="Si lo dejas vacío, 15 días"><Entrada type="number" inputMode="numeric" min={1} value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="15" /></Campo>
         </div>
         <div className="flex flex-wrap gap-2">
           <Boton icono={<Send className="size-4" />} onClick={() => crear.mutate(true)} cargando={crear.isPending && crear.variables} disabled={!activas.length}>Pasar a contrato y enviar a firmar</Boton>

@@ -238,11 +238,35 @@ export const presupuestoSchema = z.object({
   valido_hasta: fecha,
   iva_pct: numero.min(0).max(100),
   retencion_pct: numero.min(0).max(100).default(0),
+  forma_pago: z.enum(['unico', 'dos', 'tres']).default('unico'),
   condiciones: texto,
   notas: texto,
   lineas: z.array(lineaSchema).min(1, 'Añade al menos una línea'),
 }).refine((p) => p.cliente_id || p.cliente_texto, { message: 'Elige un cliente o escribe sus datos' });
 export type PresupuestoInput = z.infer<typeof presupuestoSchema>;
+
+/**
+ * Cómo se paga lo que es de pago único (la web, el logo, las fotos): lo elige el comercial en
+ * cada presupuesto. Las cuotas (mantenimiento, QR, dominio) van aparte, por meses o por años.
+ */
+export const FORMAS_PAGO = {
+  unico: { nombre: 'Pago único', condicion: 'un solo pago del 100 % al aceptar el presupuesto' },
+  dos: { nombre: '50 % y 50 %', condicion: '50 % al aceptar el presupuesto y 50 % a la entrega, antes de publicar la web' },
+  tres: { nombre: '3 pagos', condicion: 'tres pagos iguales: al aceptar el presupuesto, al aprobar el diseño y a la entrega, antes de publicar la web' },
+} as const;
+export type FormaPago = keyof typeof FORMAS_PAGO;
+
+/** Los plazos de la forma de pago, como lista del contrato */
+function plazosContrato(forma: FormaPago) {
+  if (forma === 'unico') return '- **100 %** a la firma de este contrato, como condición para iniciar los trabajos.';
+  if (forma === 'tres')
+    return [
+      '- **Un tercio** a la firma de este contrato, como condición para iniciar los trabajos.',
+      '- **Un tercio** a la aprobación del diseño por el Cliente.',
+      '- **Un tercio** a la entrega de la web terminada y antes de su publicación.',
+    ].join('\n');
+  return ['- **50 %** a la firma de este contrato, como condición para iniciar los trabajos.', '- **50 %** a la entrega de la web terminada y antes de su publicación.'].join('\n');
+}
 
 /**
  * Cliente de un presupuesto escrito a mano → la misma forma que un cliente de la lista,
@@ -334,7 +358,7 @@ export type ContratoInput = z.infer<typeof contratoSchema>;
 
 /** Variables que se pueden usar en las plantillas, con un ejemplo para la ayuda */
 export const VARIABLES_CONTRATO = [
-  ['empresa.nombre', 'Tu empresa'], ['empresa.cif', 'Tu CIF'], ['empresa.direccion_completa', 'Tu dirección'], ['empresa.ciudad', 'Tu ciudad'],
+  ['empresa.nombre', 'Tu nombre o razón social'], ['empresa.cif', 'Tu CIF o DNI'], ['empresa.direccion_completa', 'Tu dirección'], ['empresa.ciudad', 'Tu ciudad'],
   ['empresa.dias_pago', 'Días para pagar'], ['cliente.nombre', 'Razón social del cliente'], ['cliente.cif', 'CIF del cliente'],
   ['cliente.direccion_completa', 'Dirección del cliente'], ['cliente.contacto', 'Persona de contacto'], ['proyecto.nombre', 'Proyecto'],
   ['proyecto.inicio', 'Fecha de inicio'], ['proyecto.entrega', 'Entrega prevista'], ['presupuesto.numero', 'Nº de presupuesto'],
@@ -343,10 +367,11 @@ export const VARIABLES_CONTRATO = [
   ['empresa.email', 'Tu correo'], ['empresa.telefono', 'Tu teléfono'], ['empresa.iban', 'Tu IBAN (si no lo hay: «que figure en cada factura»)'],
   ['cliente.email', 'Correo del cliente'], ['cliente.telefono', 'Teléfono del cliente'],
   ['presupuesto.fecha', 'Fecha del presupuesto'], ['presupuesto.partidas', 'Partidas del presupuesto (pago único, anual y mensual)'],
+  ['presupuesto.plazos', 'Plazos de la forma de pago del presupuesto (100 %, 50 y 50 o tres pagos)'],
 ] as const;
 
-/** Partidas de un presupuesto agrupadas como en su PDF: pago único, pago anual (unidad «año») y cuota mensual (unidad «mes») */
-function partidasPresupuesto(lineas: any[] | undefined) {
+/** Partidas de un presupuesto agrupadas como en su PDF: pago único, pago anual (unidad «año») y cuota mensual (unidad «mes»). Sin IVA, sin «+ IVA» */
+function partidasPresupuesto(lineas: any[] | undefined, ivaPct: number) {
   if (!lineas?.length) return '';
   const grupos = [
     { titulo: 'Pago único', sufijo: '', es: (u: string) => u !== 'mes' && u !== 'año' },
@@ -360,7 +385,7 @@ function partidasPresupuesto(lineas: any[] | undefined) {
       const filas = ls.map((l) => {
         const [nombre, ...detalle] = String(l.concepto).split('\n');
         const cant = Number(l.cantidad) !== 1 && l.unidad !== 'mes' && l.unidad !== 'año' ? ` × ${Number(l.cantidad)}` : '';
-        return `- **${nombre}**${detalle.length ? `: ${detalle.join(' ')}` : ''} · ${eurosEs(l.importe)}${g.sufijo}${cant} + IVA`;
+        return `- **${nombre}**${detalle.length ? `: ${detalle.join(' ')}` : ''} · ${eurosEs(l.importe)}${g.sufijo}${cant}${ivaPct > 0 ? ' + IVA' : ''}`;
       });
       return [`**${g.titulo}**`, ...filas].join('\n');
     })
@@ -400,7 +425,7 @@ export function rellenarPlantilla(
     'presupuesto.numero': d.presupuesto?.numero ?? '',
     'presupuesto.base': d.presupuesto ? eurosEs(d.presupuesto.base) : '',
     'presupuesto.total': d.presupuesto ? eurosEs(d.presupuesto.total) : '',
-    'servicios.lista': (d.servicios ?? []).map((s) => `- ${s.nombre}${s.detalle ? ` (${s.detalle})` : ''}: ${eurosEs(s.precio)} ${periodo[s.periodicidad] ?? ''} + IVA`).join('\n'),
+    'servicios.lista': (d.servicios ?? []).map((s) => `- ${s.nombre}${s.detalle ? ` (${s.detalle})` : ''}: ${eurosEs(s.precio)} ${periodo[s.periodicidad] ?? ''}${Number(s.iva_pct ?? 0) > 0 ? ' + IVA' : ''}`).join('\n'),
     'fecha.larga': fechaLargaEs(d.fecha),
     'fecha.ciudad': d.empresa?.ciudad ?? '',
     'empresa.email': d.empresa?.email ?? '',
@@ -410,12 +435,21 @@ export function rellenarPlantilla(
     'cliente.email': d.cliente?.email ?? '',
     'cliente.telefono': d.cliente?.telefono ?? '',
     'presupuesto.fecha': fechaLargaEs(d.presupuesto?.fecha),
-    'presupuesto.partidas': partidasPresupuesto(d.presupuesto?.lineas),
+    'presupuesto.plazos': d.presupuesto ? plazosContrato((d.presupuesto.forma_pago as FormaPago) in FORMAS_PAGO ? d.presupuesto.forma_pago : 'dos') : '',
+    'presupuesto.partidas': partidasPresupuesto(d.presupuesto?.lineas, Number(d.presupuesto?.iva_pct ?? 0)),
   };
   return cuerpo.replace(/\{([a-z_]+\.[a-z_]+)\}/g, (todo, clave: string) => {
     if (!(clave in valores)) return todo;
     return valores[clave] || `[falta ${clave.replace('.', ' · ').replace('_', ' ')}]`;
   });
+}
+
+/** «12345678Z» → «DNI», «X1234567L» → «NIE», «B12345678» → «CIF»: cómo llamar al NIF del emisor en los documentos */
+export function etiquetaNif(nif?: string | null) {
+  const n = (nif ?? '').replace(/[\s.-]/g, '').toUpperCase();
+  if (/^\d{8}[A-Z]$/.test(n)) return 'DNI';
+  if (/^[XYZ]\d{7}[A-Z]$/.test(n)) return 'NIE';
+  return 'CIF';
 }
 
 export type ParteTexto = { texto: string; negrita?: boolean };

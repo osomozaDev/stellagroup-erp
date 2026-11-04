@@ -18,6 +18,9 @@ import { z } from 'zod';
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 /** Pasar un presupuesto a contrato: la plantilla y los dos datos que cambian en cada contrato */
+/** Días naturales de entrega de una web cuando no se dice otro plazo */
+const PLAZO_HABITUAL = 15;
+
 const aContratoSchema = z.object({
   plantilla_id: z.string().uuid().optional().nullable(),
   plazo_dias: z.coerce.number().int().min(1, 'Pon el plazo de entrega en días').max(730).optional().nullable(),
@@ -180,7 +183,7 @@ export class PresupuestosController {
   /**
    * Convierte el presupuesto en contrato con la plantilla elegida (por defecto, la de
    * servicios web): da de alta al cliente si estaba escrito a mano, rellena la plantilla
-   * con el presupuesto como Anexo I y pone el plazo de entrega y el precio por hora.
+   * con el presupuesto como Anexo I y pone el plazo de entrega (15 días si no se dice otro) y el precio por hora.
    * Si el presupuesto ya tiene un contrato que no está anulado, devuelve ese.
    */
   @Post(':id/contrato')
@@ -200,7 +203,7 @@ export class PresupuestosController {
 
     const t = await textoDeContrato(this.db, { plantillaId, clienteId: cliente.id, presupuestoId: id, proyectoId: p.proyecto_id, fecha: hoy() });
     let cuerpo = t.cuerpo;
-    if (body.plazo_dias) cuerpo = cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(body.plazo_dias));
+    cuerpo = cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(body.plazo_dias || PLAZO_HABITUAL));
     if (body.precio_hora != null) cuerpo = cuerpo.replace(/\[falta precio por hora[^\]]*\]/g, new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(body.precio_hora));
 
     const fecha = hoy();
@@ -247,6 +250,7 @@ export class PresupuestosController {
       valido_hasta: null,
       iva_pct: Number(p.iva_pct),
       retencion_pct: Number(p.retencion_pct),
+      forma_pago: p.forma_pago,
       condiciones: p.condiciones,
       notas: p.notas,
       lineas: p.lineas.map((l: any) => ({ concepto: l.concepto, cantidad: Number(l.cantidad), unidad: l.unidad, precio: Number(l.precio) })),
