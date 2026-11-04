@@ -5,8 +5,8 @@
 update empresa set condiciones_presupuesto = nullif(trim(regexp_replace(condiciones_presupuesto, 'Precios sin IVA\.?\s*', '', 'g')), '')
 where condiciones_presupuesto ~ 'Precios sin IVA';
 
--- Plantilla de servicios web para particular, sin IVA, sin precio por hora y con la cesión
--- del contrato a la sociedad que se constituya. Pasa a ser la de por defecto: la de la S.L. se desactiva
+-- Plantilla de servicios web para particular, sin IVA y sin precio por hora.
+-- Pasa a ser la de por defecto: la de la S.L. se desactiva
 -- y se vuelve a activar desde Contratos › Plantillas cuando se firme la sociedad.
 insert into plantillas_contrato (nombre, descripcion, cuerpo)
 select 'Contrato de servicios web (particular, sin IVA)',
@@ -122,12 +122,12 @@ Cuando, para prestar los servicios, el Prestador trate datos personales de los q
 
 ## 14. Equipo del proyecto
 
-El Prestador realiza los trabajos junto con el equipo que formará la futura sociedad:
+El Prestador realiza los trabajos junto con el siguiente equipo:
 
 - **Desarrollo:** el propio Prestador y **Omar Somoza**, que se encargan del diseño, el desarrollo y el mantenimiento de la web.
 - **Comercial:** **Paola González**, que atiende al Cliente, prepara el presupuesto y le acompaña durante el proyecto.
 
-El proyecto es común a los tres, pero mientras no se constituya la sociedad el Prestador firma este contrato como su único titular: es el único responsable frente al Cliente del trabajo realizado y el único destinatario de los pagos, y Omar Somoza y Paola González no son parte de este contrato. Todos ellos quedan sujetos a las mismas obligaciones de confidencialidad y protección de datos que este contrato establece.
+El proyecto es común a los tres, pero el Prestador firma este contrato como su único titular: es el único responsable frente al Cliente del trabajo realizado y el único destinatario de los pagos, y Omar Somoza y Paola González no son parte de este contrato. Todos ellos quedan sujetos a las mismas obligaciones de confidencialidad y protección de datos que este contrato establece.
 
 Cualquier petición, cambio o nuevo servicio que el Cliente quiera contratar podrá solicitarlo a Paola González, en el teléfono 610 436 323.
 
@@ -143,15 +143,11 @@ Este contrato entra en vigor en la fecha de su firma y se mantendrá hasta la en
 
 Si el Cliente cancela el proyecto antes de la entrega, deberá abonar el trabajo realizado hasta ese momento, con un mínimo equivalente al primer pago. Al terminar el contrato por cualquier causa, el Cliente abonará lo pendiente y el Prestador le entregará los materiales pagados.
 
-## 17. Cesión a una sociedad
-
-El Prestador tiene previsto constituir, junto con Omar Somoza y Paola González, una sociedad mercantil que continuará esta actividad. El Cliente consiente desde ahora que el Prestador ceda a dicha sociedad su posición en este contrato, con todos sus derechos y obligaciones y en las mismas condiciones, bastando con comunicárselo por escrito indicando la razón social, el CIF y el domicilio de la sociedad. Desde la cesión, los pagos se harán a la sociedad, que facturará los servicios pendientes con los impuestos que legalmente correspondan.
-
-## 18. Comunicaciones
+## 17. Comunicaciones
 
 Las comunicaciones entre las partes podrán realizarse por WhatsApp, teléfono o correo electrónico a los datos indicados en este contrato, que tendrán plena validez a efectos de aprobaciones, entregas y avisos. Las peticiones de cambios y de nuevos servicios podrán dirigirse también a Paola González, en el teléfono 610 436 323, como se indica en la cláusula 14.
 
-## 19. Legislación y jurisdicción
+## 18. Legislación y jurisdicción
 
 Este contrato se rige por la legislación española. Para cualquier controversia, las partes se someten a los Juzgados y Tribunales de {empresa.ciudad}, salvo que la normativa aplicable establezca un fuero imperativo distinto.
 
