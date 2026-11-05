@@ -13,6 +13,7 @@ export const TIPOS_AVISO = [
   { clave: 'facturar', nombre: 'Fin de mes', descripcion: 'Los últimos días del mes, si quedan proyectos por horas sin facturar' },
   { clave: 'renovaciones', nombre: 'Renovaciones', descripcion: 'Una semana antes de que renueve un hosting, dominio o mantenimiento' },
   { clave: 'firmas', nombre: 'Firmas', descripcion: 'Cuando un cliente firma o rechaza un presupuesto o un contrato' },
+  { clave: 'agenda', nombre: 'Agenda del día', descripcion: 'Por la mañana, las reuniones, llamadas y tareas de hoy, con sus enlaces' },
   { clave: 'semanal', nombre: 'Resumen de los lunes', descripcion: 'Lo que te deben, lo vencido y lo facturado y cobrado la semana pasada' },
 ] as const;
 export type TipoAviso = (typeof TIPOS_AVISO)[number]['clave'];
@@ -163,6 +164,9 @@ export class TelegramService implements OnModuleInit {
     await this.llamar('setMyCommands', {
       commands: [
         { command: 'menu', description: 'Botones con todo lo que puedes hacer' },
+        { command: 'agenda', description: 'Lo de hoy; /agenda semana para los próximos 7 días' },
+        { command: 'cita', description: 'Apuntar: /cita mañana 10:30 reunión con Ana' },
+        { command: 'oportunidades', description: 'Embudo de ventas: ver y mover oportunidades' },
         { command: 'presupuesto', description: 'Hacer un presupuesto y pasarlo a contrato' },
         { command: 'nuevocliente', description: 'Dar de alta un cliente' },
         { command: 'facturar', description: 'Facturar el mes y mandarlo a los clientes' },

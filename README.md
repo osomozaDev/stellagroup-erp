@@ -20,7 +20,7 @@ Parte de la misma base que ObraFácil (el ERP de Heras Perea), adaptada de obras
 - **Facturas** con numeración correlativa por serie y año (`F2026-0001`), prefacturas, rectificativas, retención de IRPF opcional, PDF y envío por correo.
 - **Cobros**: lo vencido, recordatorios automáticos por correo y aviso de rebotes (Resend).
 - **Portal de clientes**: entran con un enlace de un solo uso que les llega al correo y descargan sus facturas en PDF o en ZIP.
-- **Bot de Telegram** con miniapp: resumen de cobros, facturas, proyectos con sus hitos, `/renovaciones` y avisos diarios.
+- **Bot de Telegram** con miniapp: resumen de cobros, facturas, proyectos con sus hitos, `/renovaciones`, `/agenda`, `/cita` (en lenguaje natural: «mañana 10:30 reunión con Ana»), `/oportunidades` para mover el embudo, y avisos diarios con la agenda del día y sus enlaces.
 - **Equipo y nóminas** (estimación mensual), **Gestoría** (303, 111 y 347 en Excel) y **usuarios con roles y permisos**.
 - **Inicio** con lo pendiente: hitos entregados sin facturar, horas del mes, renovaciones en 30 días, presupuestos esperando respuesta, cobros y lo facturado en el año.
 

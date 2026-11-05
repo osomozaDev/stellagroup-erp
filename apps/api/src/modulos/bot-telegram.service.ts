@@ -10,10 +10,14 @@ import { FacturasService } from './facturas.service';
 import { CobrosService } from './cobros.controller';
 import { FacturarTelegramService, PREGUNTA_HORAS } from './facturar-telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
+import { CrmTelegramService, PREGUNTA_CITA } from './crm-telegram.service';
 import { PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_NUEVO_CLIENTE, PREGUNTAS, PresupuestosTelegramService } from './presupuestos-telegram.service';
 
 const AYUDA = [
   '/menu · botones con todo lo que puedes hacer',
+  '/agenda · lo de hoy (/agenda semana, los próximos 7 días)',
+  '/cita mañana 10:30 reunión con Ana · apuntar en la agenda',
+  '/oportunidades · embudo de ventas: ver y mover oportunidades',
   '/facturar · facturar el mes y mandarlo a los clientes',
   '/nuevocliente · dar de alta un cliente',
   '/presupuesto nombre · hacer un presupuesto, mandarlo, pasarlo a contrato y enviarlo a firmar',
@@ -62,6 +66,7 @@ export class BotTelegramService {
     private readonly facturar: FacturarTelegramService,
     private readonly envio: EnvioFacturaService,
     private readonly presupuestos: PresupuestosTelegramService,
+    private readonly crm: CrmTelegramService,
   ) {}
 
   /** Usuario conectado a este chat, con sus permisos (null si el chat no está conectado o ya no tiene acceso) */
@@ -89,6 +94,11 @@ export class BotTelegramService {
       const q = await this.quien(chatId);
       if (!q) return;
       return this.facturar.contestarHoras(chatId, texto, respuesta, (m, r) => this.puede(q, m, r));
+    }
+    if (!texto.startsWith('/') && respondeA?.startsWith(PREGUNTA_CITA)) {
+      const q = await this.quien(chatId);
+      if (!q) return;
+      return this.crm.crearCita(chatId, texto, (m, r) => this.puede(q, m, r));
     }
     // Respuestas al alta de cliente, al presupuesto (cliente y partidas) y al contrato
     if (!texto.startsWith('/') && respondeA && PREGUNTAS.some((p) => respondeA.startsWith(p))) {
@@ -118,6 +128,14 @@ export class BotTelegramService {
       case '/start':
       case '/menu':
         return this.menu(chatId, q);
+      case '/agenda':
+        return this.crm.verAgenda(chatId, /semana/i.test(argumento) ? 'semana' : 'hoy', (m, r) => this.puede(q, m, r));
+      case '/cita':
+        if (!this.puede(q, 'POST', '/agenda')) return this.telegram.enviar(chatId, 'No tienes permiso para apuntar en la agenda.');
+        return argumento ? this.crm.crearCita(chatId, argumento, (m, r) => this.puede(q, m, r)) : this.crm.pedirCita(chatId);
+      case '/oportunidades':
+      case '/oportunidad':
+        return this.crm.verEmbudo(chatId, argumento, (m, r) => this.puede(q, m, r));
       case '/facturar':
         if (!this.puede(q, 'POST', '/facturas/facturar-mes')) return this.telegram.enviar(chatId, 'No tienes permiso para facturar.');
         return this.facturar.elegirMes(chatId);
@@ -154,6 +172,11 @@ export class BotTelegramService {
   /** Botones con todo lo que se puede hacer, según los permisos de cada uno */
   private menu(chatId: number, q: Quien) {
     const filas: Botones = [];
+    const ventas = [];
+    if (this.puede(q, 'GET', '/agenda')) ventas.push({ text: '📅 Agenda', callback_data: 'ag:hoy' });
+    if (this.puede(q, 'GET', '/oportunidades')) ventas.push({ text: '🎯 Oportunidades', callback_data: 'm:oportunidades' });
+    if (ventas.length) filas.push(ventas);
+    if (this.puede(q, 'POST', '/agenda')) filas.push([{ text: '➕ Nueva cita', callback_data: 'm:cita' }]);
     const nuevo = [];
     if (this.puede(q, 'POST', '/presupuestos')) nuevo.push({ text: '📝 Nuevo presupuesto', callback_data: 'm:presupuesto' });
     if (this.puede(q, 'POST', '/clientes')) nuevo.push({ text: '👤 Nuevo cliente', callback_data: 'm:nuevocliente' });
@@ -411,6 +434,9 @@ export class BotTelegramService {
         const r = await this.facturar.boton(accion, id, chatId, mensajeId, quien, (m, ruta) => this.puede(q, m, ruta), (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
         if (r !== false) return r;
       }
+      if (this.crm.esSuya(accion)) {
+        return await this.crm.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
+      }
       if (this.presupuestos.esSuya(accion)) {
         return await this.presupuestos.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), q, (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
       }
@@ -418,6 +444,8 @@ export class BotTelegramService {
         case 'm': {
           await this.telegram.responderBoton(cb.id);
           if (id === 'menu') return this.menu(chatId, q);
+          if (id === 'cita') return this.puede(q, 'POST', '/agenda') ? this.crm.pedirCita(chatId) : sinPermiso();
+          if (id === 'oportunidades') return this.crm.verEmbudo(chatId, '', (m, ruta) => this.puede(q, m, ruta));
           if (id === 'facturar') return this.puede(q, 'POST', '/facturas/facturar-mes') ? this.facturar.elegirMes(chatId) : sinPermiso();
           if (id === 'resumen') return this.telegram.enviar(chatId, await this.avisos.textoResumen(), [[this.telegram.abrir('Abrir cobros', '/cobros')]]);
           if (id === 'pendientes') return this.telegram.enviar(chatId, await this.avisos.textoPendientes(), [[this.telegram.abrir('Abrir facturas', '/facturas?estado=emitida')]]);

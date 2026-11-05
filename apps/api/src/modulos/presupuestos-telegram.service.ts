@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { FORMAS_PAGO, FormaPago, lineaDeCatalogo } from '@stella/shared';
+import { FORMAS_PAGO, FormaPago, lineaDeCatalogo, TIPOS_PROYECTO } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { busqueda, ok } from '../comun/db';
 import { fichaDeTexto } from '../comun/alta-cliente';
@@ -9,6 +9,7 @@ import { Botones, html, TelegramService } from '../comun/telegram.service';
 import { euros, hoyMadrid } from './avisos-telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
+import { OportunidadesController } from './crm.controller';
 import { PresupuestosController } from './presupuestos.controller';
 
 /** Preguntas a las que se contesta escribiendo; la de la partida y la del contrato llevan el nº del presupuesto */
@@ -20,7 +21,7 @@ export const PREGUNTA_DATO = '✏️ Falta en el contrato';
 export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['np', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
+const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
 
 const TITULO_PROVISIONAL = 'Presupuesto';
 const SUFIJO: Record<string, string> = { mes: '/mes', 'año': '/año' };
@@ -156,15 +157,22 @@ export class PresupuestosTelegramService {
   }
 
   /** Presupuesto en borrador para el cliente, sin partidas: se van añadiendo con los botones */
-  private async empezar(chatId: number, clienteId: string, puede: Puede) {
+  private async empezar(chatId: number, clienteId: string, puede: Puede, deOportunidad?: { oportunidad_id: string; tipo_proyecto: any }) {
     if (!puede('POST', '/presupuestos')) return this.telegram.enviar(chatId, 'No tienes permiso para hacer presupuestos.');
     const e = ok(await this.db.from('empresa').select('iva_pct').eq('id', 1).single()) as any;
     const p = await this.presupuestos.crear({
       cliente_id: clienteId, cliente_texto: null, titulo: TITULO_PROVISIONAL, introduccion: null, fecha: hoyMadrid(), valido_hasta: null,
-      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, forma_pago: 'unico', condiciones: null, notas: null, lineas: [],
+      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, forma_pago: 'unico', condiciones: null, notas: null, lineas: [], ...deOportunidad,
     });
     const { texto, botones } = await this.tarjeta(p.id);
     return this.telegram.enviar(chatId, texto, botones);
+  }
+
+  /** Presupuesto de una oportunidad: queda enlazado a ella, que pasa a Propuesta y luego a Ganada al firmar */
+  private async empezarDeOportunidad(chatId: number, id: string, puede: Puede) {
+    const o = ok(await this.db.from('oportunidades').select('cliente_id, tipo_proyecto').eq('id', id).single()) as any;
+    const clienteId = o.cliente_id ?? (await new OportunidadesController(this.db).altaCliente(id)).id;
+    return this.empezar(chatId, clienteId, puede, { oportunidad_id: id, tipo_proyecto: o.tipo_proyecto ?? null });
   }
 
   private async cargar(id: string) {
@@ -215,6 +223,14 @@ export class PresupuestosTelegramService {
 
   private hayPagoUnico(p: any) {
     return (p.lineas ?? []).some((l: any) => l.unidad !== 'mes' && l.unidad !== 'año');
+  }
+
+  /** Al terminarlo, antes de nada: qué proyecto se creará cuando lo firme */
+  private async preguntarTipo(id: string) {
+    const p = await this.cargar(id);
+    const botones: Botones = [];
+    for (let i = 0; i < TIPOS_PROYECTO.length; i += 2) botones.push(TIPOS_PROYECTO.slice(i, i + 2).map((t) => ({ text: t.nombre, callback_data: `pt:${id}:${t.clave}` })));
+    return { texto: [this.resumen(p), '', '🚀 ¿Qué proyecto es? Se creará así cuando lo firme.'].join('\n'), botones };
   }
 
   /** Al terminarlo: cómo se paga lo de pago único; si no lo hay, directamente las cuotas */
@@ -343,6 +359,20 @@ export class PresupuestosTelegramService {
         await responder('📝 Empezando el presupuesto…');
         return this.empezar(chatId, id, puede);
 
+      case 'no':
+        if (!puede('POST', '/presupuestos') || !puede('POST', '/clientes')) return sinPermiso();
+        await responder('📝 Empezando el presupuesto…');
+        return this.empezarDeOportunidad(chatId, id, puede);
+
+      case 'pt': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        const tipo = TIPOS_PROYECTO.find((t) => t.clave === extra);
+        if (!tipo) return responder();
+        ok(await this.db.from('presupuestos').update({ tipo_proyecto: tipo.clave }).eq('id', id));
+        await responder(`🚀 ${tipo.nombre}`);
+        return editar(await this.preguntarPago(id, puede));
+      }
+
       case 'pa': {
         if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
         const c = (await this.catalogo())[Number(extra)];
@@ -366,11 +396,12 @@ export class PresupuestosTelegramService {
         return editar(await this.tarjeta(id));
       }
 
-      // Al terminar un borrador, antes de nada, cómo se paga
+      // Al terminar un borrador, antes de nada, qué proyecto es y cómo se paga
       case 'pl': {
         await responder();
         const p = await this.cargar(id);
-        return editar(p.estado === 'borrador' && puede('PATCH', `/presupuestos/${id}`) ? await this.preguntarPago(id, puede) : await this.final(id, puede));
+        if (p.estado !== 'borrador' || !puede('PATCH', `/presupuestos/${id}`)) return editar(await this.final(id, puede));
+        return editar(p.tipo_proyecto ? await this.preguntarPago(id, puede) : await this.preguntarTipo(id));
       }
 
       case 'pg':

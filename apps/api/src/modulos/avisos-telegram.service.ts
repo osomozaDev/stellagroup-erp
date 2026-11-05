@@ -5,6 +5,7 @@ import { primerDiaMes } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
 import { html, TelegramService } from '../comun/telegram.service';
+import { AgendaController } from './crm.controller';
 
 export const euros = (n: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', useGrouping: 'always' } as unknown as Intl.NumberFormatOptions).format(n);
 export const fechaCorta = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
@@ -14,6 +15,27 @@ export const hoyMadrid = () => new Date().toLocaleDateString('sv-SE', { timeZone
 const sumarDias = (f: string, n: number) => new Date(Date.parse(`${f}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 export const diasEntre = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 export const doc = (f: { numero?: string | null }) => (f.numero ? `Factura ${f.numero}` : 'Prefactura');
+export const horaMadrid = (f: string) => new Date(f).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
+export const diaMadrid = (f: string) => new Date(f).toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+/** «jueves 5 nov» */
+export const diaLargo = (f: string) => `${new Date(`${f}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'long' })} ${fechaCorta(f)}`;
+
+const ICONO_EVENTO: Record<string, string> = { reunion: '🤝', llamada: '📞', tarea: '📌', entrega: '🚩', otro: '🗓' };
+const ICONO_AVISO: Record<string, string> = { hito: '🎯', entrega: '🚩', renovacion: '🔁', cierre: '🤝' };
+const enlaceWeb = (url: string, texto: string) => `<a href="${html(url).replace(/"/g, '&quot;')}">${html(texto)}</a>`;
+
+/** Una línea de la agenda, con sus enlaces para abrirlos directamente desde el chat */
+export function lineaEvento(e: any) {
+  const lugarWeb = /^https?:\/\//i.test(e.lugar ?? '');
+  const enlaces = [
+    ...(lugarWeb ? [enlaceWeb(e.lugar, 'Videollamada')] : []),
+    ...(e.enlaces ?? []).map((l: any) => enlaceWeb(l.url, l.nombre || new URL(l.url).hostname)),
+  ];
+  const detalle = [e.cliente?.nombre ?? e.oportunidad?.titulo ?? e.proyecto?.nombre, e.lugar && !lugarWeb ? e.lugar : null].filter(Boolean).map(html);
+  return `${e.completado_en ? '✅' : (ICONO_EVENTO[e.tipo] ?? '🗓')} ${e.todo_el_dia ? '' : `${horaMadrid(e.inicio)} · `}${html(e.titulo)}${detalle.length ? ` (${detalle.join(', ')})` : ''}${enlaces.length ? `\n   🔗 ${enlaces.join(' · ')}` : ''}`;
+}
+
+export const lineaAviso = (a: any) => `${ICONO_AVISO[a.tipo] ?? '•'} ${html(a.titulo)}${a.detalle ? ` · ${html(a.detalle)}` : ''}`;
 
 /** Avisos que dependen del día: vencidas, fin de mes y el resumen de los lunes */
 @Injectable()
@@ -77,7 +99,13 @@ export class AvisosTelegramService {
   async diarios() {
     if (!this.telegram.configurado) return { configurado: false };
     const hoy = hoyMadrid();
-    const enviados = { vencidas: 0, facturar: 0, renovaciones: 0, semanal: 0 };
+    const enviados = { vencidas: 0, facturar: 0, renovaciones: 0, semanal: 0, agenda: 0 };
+
+    // Lo de hoy en la agenda: un solo mensaje, y ninguno si no hay nada
+    const agenda = await this.textoAgendaHoy(hoy);
+    if (agenda) {
+      enviados.agenda += await this.telegram.avisarUnaVez(`agenda:${hoy}`, 'agenda', agenda, { botones: [[{ text: '📅 Ver y marcar hecho', callback_data: 'ag:hoy' }], [this.telegram.abrir('Abrir agenda', '/agenda')]] });
+    }
 
     // Facturas que han vencido (como mucho de la última semana, para no inundar el primer día)
     const vencidas = (await this.pendientes()).filter((f) => f.vencimiento && f.vencimiento < hoy && f.vencimiento >= sumarDias(hoy, -7));
@@ -135,8 +163,16 @@ export class AvisosTelegramService {
     if (new Date(`${hoy}T12:00:00Z`).getUTCDay() === 1) {
       enviados.semanal += await this.telegram.avisarUnaVez(`semanal:${hoy}`, 'semanal', await this.textoSemanal(hoy));
     }
-    if (enviados.vencidas + enviados.facturar + enviados.renovaciones + enviados.semanal) this.log.log(`Avisos de Telegram: ${JSON.stringify(enviados)}`);
+    if (enviados.vencidas + enviados.facturar + enviados.renovaciones + enviados.semanal + enviados.agenda) this.log.log(`Avisos de Telegram: ${JSON.stringify(enviados)}`);
     return enviados;
+  }
+
+  /** La agenda de hoy para el aviso de la mañana; null si no hay nada */
+  async textoAgendaHoy(hoy = hoyMadrid()) {
+    const { eventos, avisos } = (await new AgendaController(this.db).rango(hoy, hoy)) as { eventos: any[]; avisos: any[] };
+    const pendientes = eventos.filter((e) => !e.completado_en);
+    if (!pendientes.length && !avisos.length) return null;
+    return [`📅 <b>Hoy, ${diaLargo(hoy)}</b>`, '', ...pendientes.map(lineaEvento), ...avisos.map(lineaAviso)].join('\n');
   }
 
   async textoSemanal(hoy = hoyMadrid()) {
