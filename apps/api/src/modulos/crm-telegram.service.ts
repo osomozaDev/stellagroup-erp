@@ -1,18 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { ETAPAS_OPORTUNIDAD, eventoSchema, instanteMadrid, nombreEtapa } from '@stella/shared';
+import { demoListaSchema, ETAPAS_OPORTUNIDAD, eventoSchema, instanteMadrid, nombreEtapa, oportunidadSchema, solicitudDemoSchema } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { busqueda, ok } from '../comun/db';
 import { Botones, html, TelegramService } from '../comun/telegram.service';
 import { diaLargo, diaMadrid, euros, fechaCorta, hoyMadrid, horaMadrid, lineaAviso, lineaEvento } from './avisos-telegram.service';
 import { AgendaController, OportunidadesController } from './crm.controller';
+import { DemosService } from './demos.service';
 
 /** Pregunta a la que se contesta escribiendo la cita */
 export const PREGUNTA_CITA = '📅 Escribe la cita';
+export const PREGUNTA_NUEVA = '🎯 ¿Con quién es la oportunidad?';
+const PREGUNTA_SOLICITUD = '🎬 Solicitud de demo #';
+const PREGUNTA_URL = '🔗 URL de la demo #';
+export const PREGUNTAS_DEMO = [PREGUNTA_SOLICITUD, PREGUNTA_URL];
 const EJEMPLO_CITA = 'p. ej. «mañana 10:30 reunión con Café Origen» o «viernes llamar a Ana»';
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['ag', 'eh', 'eb', 'oo', 'oe', 'ol']);
+const ACCIONES = new Set(['ag', 'eh', 'eb', 'oo', 'oe', 'ol', 'ods', 'odl']);
 
 /** Motivos de pérdida en botones: en el chat no hace falta escribir; para otro motivo, la app */
 const MOTIVOS = ['Precio', 'Eligió a otro', 'No era el momento', 'Sin respuesta'];
@@ -105,6 +110,7 @@ export class CrmTelegramService {
   constructor(
     @Inject(SUPABASE) private readonly db: SupabaseClient,
     private readonly telegram: TelegramService,
+    private readonly demos: DemosService,
   ) {
     this.agenda = new AgendaController(db);
     this.oportunidades = new OportunidadesController(db);
@@ -235,6 +241,9 @@ export class CrmTelegramService {
     if (telefono) lineas.push(`📞 ${html(telefono)}`);
     if (correo) lineas.push(`✉️ ${html(correo)}`);
     if (o.motivo_perdida) lineas.push(`Motivo: ${html(o.motivo_perdida)}`);
+    if (o.sector) lineas.push(`Sector: ${html(o.sector)}`);
+    if (o.requisitos) lineas.push(`Qué hay que crear: ${html(o.requisitos.slice(0, 600))}`);
+    if (o.demo_url) lineas.push(`🔗 Demo: ${html(o.demo_url)}`);
     const proximo = (o.eventos ?? []).find((e: any) => !e.completado_en);
     if (proximo) lineas.push(`📅 Próximo: ${fechaCorta(diaMadrid(proximo.inicio))}${proximo.todo_el_dia ? '' : ` ${horaMadrid(proximo.inicio)}`} · ${html(proximo.titulo)}`);
     if (nota) lineas.push('', nota);
@@ -243,7 +252,11 @@ export class CrmTelegramService {
     if (puede('PATCH', `/oportunidades/${id}/etapa`)) {
       if (CERRADAS.includes(o.etapa)) filas.push([{ text: '↩️ Volver a abrirla', callback_data: `oe:${id}:contactado` }]);
       else {
-        const otras = ETAPAS_OPORTUNIDAD.filter((e) => !CERRADAS.includes(e.clave) && e.clave !== o.etapa).map((e) => ({ text: e.nombre, callback_data: `oe:${id}:${e.clave}` }));
+        // El paso de la demo va primero: es lo siguiente que toca
+        if (!o.demo_solicitada_en && !o.demo_url && puede('POST', `/oportunidades/${id}/solicitar-demo`)) filas.push([{ text: '🎬 Solicitar demo', callback_data: `ods:${id}` }]);
+        if (o.etapa === 'demo_solicitada' && puede('POST', `/oportunidades/${id}/demo-lista`)) filas.push([{ text: '✅ Demo lista', callback_data: `odl:${id}` }]);
+        const validas = ETAPAS_OPORTUNIDAD.filter((e) => (e.clave !== 'demo_solicitada' || o.demo_solicitada_en) && (e.clave !== 'demo_lista' || o.demo_url));
+        const otras = validas.filter((e) => !CERRADAS.includes(e.clave) && e.clave !== o.etapa).map((e) => ({ text: e.nombre, callback_data: `oe:${id}:${e.clave}` }));
         for (let i = 0; i < otras.length; i += 2) filas.push(otras.slice(i, i + 2));
         filas.push([{ text: '✅ Ganada', callback_data: `oe:${id}:ganado` }, { text: '✖️ Perdida', callback_data: `oe:${id}:perdido` }]);
       }
@@ -252,6 +265,7 @@ export class CrmTelegramService {
     if (!CERRADAS.includes(o.etapa) && !o.presupuestos?.length && puede('POST', '/presupuestos') && (!sinCliente || puede('POST', '/clientes'))) {
       filas.push([{ text: sinCliente ? '📝 Dar de alta y hacer presupuesto' : '📝 Hacer presupuesto', callback_data: `no:${id}` }]);
     }
+    if (o.demo_url) filas.push([{ text: '🌐 Abrir demo', url: o.demo_url }]);
     filas.push([this.telegram.abrir('Abrir oportunidad', `/crm/${id}`)]);
     return { texto: lineas.join('\n'), botones: filas };
   }
@@ -259,6 +273,79 @@ export class CrmTelegramService {
   private async ficha(chatId: number, id: string, puede: Puede) {
     const r = await this.tarjeta(id, puede);
     return this.telegram.enviar(chatId, r.texto, r.botones);
+  }
+
+  // ───────────────────────── Demos ─────────────────────────
+
+  private preguntar(chatId: number, texto: string, ejemplo: string) {
+    return this.telegram.llamar('sendMessage', { chat_id: chatId, text: texto, reply_markup: { force_reply: true, input_field_placeholder: ejemplo } });
+  }
+
+  pedirNueva(chatId: number) {
+    return this.preguntar(chatId, `${PREGUNTA_NUEVA} Escribe el nombre del cliente o de la empresa:`, 'Nombre del cliente…');
+  }
+
+  /** Crea la oportunidad con lo mínimo: el siguiente paso es solicitar la demo desde su tarjeta */
+  async crearOportunidad(chatId: number, nombre: string, puede: Puede) {
+    if (!puede('POST', '/oportunidades')) return this.telegram.enviar(chatId, 'No tienes permiso para crear oportunidades.');
+    if (nombre.trim().length < 2) return this.pedirNueva(chatId);
+    const cliente = ok(await this.db.from('clientes').select('id, nombre').ilike('nombre', busqueda(nombre.trim())).limit(1).maybeSingle()) as any;
+    const o = (await this.oportunidades.crear(oportunidadSchema.parse({ titulo: `Demo para ${cliente?.nombre ?? nombre.trim()}`, cliente_id: cliente?.id ?? null, contacto_empresa: cliente ? null : nombre.trim() }) as any)) as any;
+    const r = await this.tarjeta(o.id, puede, '✅ Oportunidad creada. Siguiente paso: solicitar la demo.');
+    return this.telegram.enviar(chatId, r.texto, r.botones);
+  }
+
+  /** Demos por hacer */
+  async verDemos(chatId: number, puede: Puede) {
+    if (!puede('GET', '/oportunidades')) return this.telegram.enviar(chatId, 'No tienes permiso para ver las oportunidades.');
+    const lista = await this.demos.pendientes();
+    if (!lista.length) return this.telegram.enviar(chatId, '🎬 No hay demos pendientes.');
+    const hoy = hoyMadrid();
+    return this.telegram.enviar(
+      chatId,
+      [`🎬 <b>Demos pendientes</b> · ${lista.length}`, '', ...lista.map((o) => `${o.demo_para && o.demo_para < hoy ? '🔴' : '⚪️'} ${html(o.cliente?.nombre ?? o.contacto_empresa ?? o.contacto_nombre)}${o.sector ? ` · ${html(o.sector)}` : ''}${o.demo_para ? ` · para el ${fechaCorta(o.demo_para)}` : ''}`)].join('\n'),
+      lista.slice(0, 12).map((o) => [{ text: `${o.cliente?.nombre ?? o.contacto_empresa ?? o.contacto_nombre}`.slice(0, 60), callback_data: `oo:${o.id}` }]),
+    );
+  }
+
+  /** Respuestas a las dos preguntas de la demo: llevan el nº de la oportunidad */
+  async contestarDemo(chatId: number, texto: string, pregunta: string, puede: Puede, usuarioId: string) {
+    const numero = Number(pregunta.match(/#(\d+)/)?.[1]);
+    const o = numero ? (ok(await this.db.from('oportunidades').select('id').eq('numero', numero).maybeSingle()) as any) : null;
+    if (!o) return this.telegram.enviar(chatId, 'No encuentro esa oportunidad. Vuelve a abrirla desde /oportunidades.');
+    try {
+      if (!puede('POST', `/oportunidades/${o.id}/solicitar-demo`)) return await this.telegram.enviar(chatId, 'No tienes permiso para esto.');
+      if (pregunta.startsWith(PREGUNTA_URL)) {
+        const [url, ...nota] = texto.trim().split(/\s+/);
+        const datos = demoListaSchema.safeParse({ url, nota: nota.join(' ') });
+        if (!datos.success) {
+          await this.telegram.enviar(chatId, 'Esa dirección no es válida. Pega la URL de la demo, por ejemplo demo.cliente.es');
+          return await this.pedirUrl(chatId, numero);
+        }
+        await this.demos.marcarLista(o.id, datos.data, usuarioId);
+        const r = await this.tarjeta(o.id, puede, '🎉 Demo lista: ya se lo he pasado a quien la pidió.');
+        return await this.telegram.enviar(chatId, r.texto, r.botones);
+      }
+      const [sector, ...resto] = texto.trim().split('\n');
+      const datos = solicitudDemoSchema.safeParse({ sector, requisitos: resto.join('\n') });
+      if (!datos.success) {
+        await this.telegram.enviar(chatId, 'Necesito el sector en la primera línea y, debajo, la idea de lo que hay que crear.');
+        return await this.pedirSolicitud(chatId, numero);
+      }
+      await this.demos.solicitar(o.id, datos.data, usuarioId);
+      const r = await this.tarjeta(o.id, puede, '🎬 Demo solicitada: ya tienen el aviso. Te llegará la URL aquí.');
+      return await this.telegram.enviar(chatId, r.texto, r.botones);
+    } catch (e: any) {
+      return this.telegram.enviar(chatId, `⚠️ ${html(e.message ?? 'Algo ha fallado. Prueba desde la app.')}`);
+    }
+  }
+
+  private pedirSolicitud(chatId: number, numero: number) {
+    return this.preguntar(chatId, `${PREGUNTA_SOLICITUD}${numero}: escribe el sector en la primera línea y, debajo, la idea de lo que hay que crear.`, 'Hostelería\nWeb con reservas y carta…');
+  }
+
+  private pedirUrl(chatId: number, numero: number) {
+    return this.preguntar(chatId, `${PREGUNTA_URL}${numero}: pégala aquí. Si quieres, añade detrás una nota para la comercial.`, 'demo.cliente.es');
   }
 
   // ───────────────────────── Botones ─────────────────────────
@@ -281,6 +368,20 @@ export class CrmTelegramService {
         await this.agenda.borrar(id);
         await responder('↩️ Quitado de la agenda');
         return this.telegram.editar(chatId, mensajeId, '↩️ Cita quitada de la agenda.', [[{ text: '➕ Nueva cita', callback_data: 'm:cita' }]]);
+
+      case 'ods': {
+        if (!puede('POST', `/oportunidades/${id}/solicitar-demo`)) return sinPermiso();
+        await responder();
+        const o = (await this.oportunidades.ver(id)) as any;
+        return this.pedirSolicitud(chatId, o.numero);
+      }
+
+      case 'odl': {
+        if (!puede('POST', `/oportunidades/${id}/demo-lista`)) return sinPermiso();
+        await responder();
+        const o = (await this.oportunidades.ver(id)) as any;
+        return this.pedirUrl(chatId, o.numero);
+      }
 
       case 'oo':
         await responder();

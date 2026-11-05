@@ -1,12 +1,13 @@
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { EventoInput, eventoSchema, instanteMadrid, MoverOportunidadInput, moverOportunidadSchema, OportunidadInput, oportunidadSchema } from '@stella/shared';
+import { DemoListaInput, demoListaSchema, EventoInput, eventoSchema, instanteMadrid, MoverOportunidadInput, moverOportunidadSchema, OportunidadInput, oportunidadSchema, SolicitudDemoInput, solicitudDemoSchema } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
 import { busqueda, ok } from '../comun/db';
+import { DemosService } from './demos.service';
 
-const SELECCION_LISTA = 'id, titulo, etapa, importe, cierre_previsto, tipo_proyecto, origen, orden, contacto_empresa, contacto_nombre, proyecto_id, created_at, cliente:clientes(id, nombre), responsable:empleados(id, nombre, apellidos)';
+const SELECCION_LISTA = 'id, numero, titulo, etapa, sector, demo_url, importe, cierre_previsto, tipo_proyecto, origen, orden, contacto_empresa, contacto_nombre, proyecto_id, created_at, cliente:clientes(id, nombre), responsable:empleados(id, nombre, apellidos)';
 
 /** Con quién es: el cliente de la lista o el contacto escrito */
 const conQuien = (o: any) => o.cliente?.nombre ?? o.contacto_empresa ?? o.contacto_nombre ?? '';
@@ -23,7 +24,7 @@ export class OportunidadesController {
     // Próximo evento pendiente de cada oportunidad: lo primero que hay que mirar en el embudo
     const ids = lista.filter((o) => !['ganado', 'perdido'].includes(o.etapa)).map((o) => o.id);
     const proximos = ids.length
-      ? (ok(await this.db.from('eventos').select('oportunidad_id, titulo, inicio').in('oportunidad_id', ids).is('completado_en', null).order('inicio')) as any[])
+      ? (ok(await this.db.from('eventos').select('oportunidad_id, titulo, inicio, todo_el_dia').in('oportunidad_id', ids).is('completado_en', null).order('inicio')) as any[])
       : [];
     return lista.map((o) => ({ ...o, con_quien: conQuien(o), proximo: proximos.find((e) => e.oportunidad_id === o.id) ?? null }));
   }
@@ -60,6 +61,12 @@ export class OportunidadesController {
   @Patch(':id/etapa')
   async mover(@Param('id') id: string, @Body(new ZodPipe(moverOportunidadSchema)) body: MoverOportunidadInput) {
     if (body.etapa === 'perdido' && !body.motivo_perdida) throw new BadRequestException('Apunta por qué se ha perdido');
+    // Estas dos etapas se ganan con su paso: sin solicitud nadie se enteraría de que hay que hacer la demo
+    if (body.etapa === 'demo_solicitada' || body.etapa === 'demo_lista') {
+      const o = ok(await this.db.from('oportunidades').select('demo_solicitada_en, demo_url').eq('id', id).single()) as any;
+      if (body.etapa === 'demo_solicitada' && !o.demo_solicitada_en) throw new BadRequestException('Solicita la demo desde la oportunidad, con el sector y los requisitos');
+      if (body.etapa === 'demo_lista' && !o.demo_url) throw new BadRequestException('Falta la URL de la demo: márcala como lista desde la oportunidad');
+    }
     return ok(
       await this.db
         .from('oportunidades')
@@ -95,6 +102,21 @@ export class OportunidadesController {
   async borrar(@Param('id') id: string) {
     ok(await this.db.from('oportunidades').delete().eq('id', id));
     return { ok: true };
+  }
+}
+
+@Controller('oportunidades')
+export class DemosController {
+  constructor(private readonly demos: DemosService) {}
+
+  @Post(':id/solicitar-demo')
+  solicitar(@Param('id') id: string, @Body(new ZodPipe(solicitudDemoSchema)) body: SolicitudDemoInput, @Req() req: any) {
+    return this.demos.solicitar(id, body, req.user.id);
+  }
+
+  @Post(':id/demo-lista')
+  lista(@Param('id') id: string, @Body(new ZodPipe(demoListaSchema)) body: DemoListaInput, @Req() req: any) {
+    return this.demos.marcarLista(id, body, req.user.id);
   }
 }
 

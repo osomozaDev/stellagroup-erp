@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CalendarPlus, Check, Clock, FileSignature, FolderKanban, Mail, Pencil, Phone, Plus, Trash2, Trophy, UserPlus, XCircle } from 'lucide-react';
+import { CalendarPlus, Check, Clock, ExternalLink, FileSignature, FolderKanban, Mail, Pencil, Phone, Plus, Send, Trash2, Trophy, UserPlus, XCircle } from 'lucide-react';
 import { ETAPAS_OPORTUNIDAD, EtapaOportunidad, nombreEtapa, nombreTipoProyecto, ORIGENES_OPORTUNIDAD, TIPOS_PROYECTO } from '@stella/shared';
 import { api } from '../lib/api';
 import { euros, fecha, hoyISO, nombreCompleto } from '../lib/formato';
@@ -54,7 +54,7 @@ export default function Crm() {
         {o.tipo_proyecto && <span className="truncate text-[11px] text-slate-400">{nombreTipoProyecto(o.tipo_proyecto)}</span>}
       </div>
       {o.proximo ? (
-        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500"><Clock className="size-3 shrink-0" /><span className="truncate">{fechaHora(o.proximo.inicio)} · {o.proximo.titulo}</span></p>
+        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500"><Clock className="size-3 shrink-0" /><span className="truncate">{o.proximo.todo_el_dia ? new Date(o.proximo.inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : fechaHora(o.proximo.inicio)} · {o.proximo.titulo}</span></p>
       ) : !['ganado', 'perdido'].includes(o.etapa) && (
         <p className="mt-1.5 text-[11px] text-amber-700">Sin próxima acción</p>
       )}
@@ -99,7 +99,12 @@ export default function Crm() {
                 onDragLeave={() => setEncima(null)}
                 onDrop={() => {
                   const o = lista.find((x) => x.id === arrastrando);
-                  if (o && o.etapa !== e.clave) mover.mutate({ id: o.id, etapa: e.clave });
+                  if (o?.etapa !== e.clave && o) {
+                    // Estas etapas necesitan datos: se abre la oportunidad para completar el paso
+                    if (e.clave === 'demo_solicitada' && o.etapa === 'nuevo') navegar(`/crm/${o.id}`);
+                    else if (e.clave === 'demo_lista' && !o.demo_url) navegar(`/crm/${o.id}`);
+                    else mover.mutate({ id: o.id, etapa: e.clave });
+                  }
                   setEncima(null);
                 }}
                 className={cx('flex w-64 flex-col rounded-2xl bg-slate-100/80 p-2 transition', encima === e.clave && 'ring-2 ring-marca-500')}
@@ -132,6 +137,7 @@ function DetalleOportunidad({ id, onCerrar }: { id: string; onCerrar: () => void
   const [editar, setEditar] = useState(false);
   const [evento, setEvento] = useState<any | null>(null);
   const [nuevoEvento, setNuevoEvento] = useState(false);
+  const [presentar, setPresentar] = useState(false);
   const [perder, setPerder] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [borrar, setBorrar] = useState(false);
@@ -189,7 +195,7 @@ function DetalleOportunidad({ id, onCerrar }: { id: string; onCerrar: () => void
           <div>
             <p className="mb-1.5 text-sm font-medium text-slate-700">Mover a</p>
             <div className="flex flex-wrap gap-1.5">
-              {ABIERTAS.map((e) => (
+              {ABIERTAS.filter((e) => (e.clave !== 'demo_solicitada' || o.demo_solicitada_en) && (e.clave !== 'demo_lista' || o.demo_url)).map((e) => (
                 <button
                   key={e.clave}
                   onClick={() => mover.mutate({ etapa: e.clave })}
@@ -212,6 +218,8 @@ function DetalleOportunidad({ id, onCerrar }: { id: string; onCerrar: () => void
               </div>
             )}
           </div>
+
+          {!['ganado', 'perdido'].includes(o.etapa) || o.demo_url ? <TarjetaDemo o={o} onPresentar={() => setPresentar(true)} /> : null}
 
           <Tarjeta titulo="Contacto" accion={!o.cliente_id && <button onClick={() => alta.mutate()} className="inline-flex items-center gap-1 text-sm font-medium text-marca-600"><UserPlus className="size-4" />Dar de alta</button>}>
             <dl className="grid sm:grid-cols-2 gap-3">
@@ -242,7 +250,7 @@ function DetalleOportunidad({ id, onCerrar }: { id: string; onCerrar: () => void
                     </button>
                     <button onClick={() => setEvento(e)} className="min-w-0 flex-1 text-left">
                       <span className={cx('block truncate text-sm font-medium', e.completado_en && 'text-slate-400 line-through')}>{e.titulo}</span>
-                      <span className="block text-xs text-slate-500">{fechaHora(e.inicio)}</span>
+                      <span className="block text-xs text-slate-500">{e.todo_el_dia ? new Date(e.inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : fechaHora(e.inicio)}</span>
                     </button>
                   </li>
                 ))}
@@ -276,11 +284,85 @@ function DetalleOportunidad({ id, onCerrar }: { id: string; onCerrar: () => void
 
           {editar && <FormularioOportunidad oportunidad={o} onCerrar={() => setEditar(false)} />}
           {evento && <FormularioEvento evento={evento} onCerrar={() => setEvento(null)} />}
+          {presentar && <FormularioEvento inicial={{ oportunidad_id: id, cliente_id: o.cliente_id, responsable_id: o.responsable_id, tipo: 'reunion', titulo: `Presentar demo: ${o.con_quien}`, enlaces: [{ nombre: 'Web demo', url: o.demo_url }] }} onCerrar={() => setPresentar(false)} />}
           {nuevoEvento && <FormularioEvento inicial={{ oportunidad_id: id, cliente_id: o.cliente_id, responsable_id: o.responsable_id, tipo: 'llamada', titulo: `Seguimiento: ${o.con_quien}` }} onCerrar={() => setNuevoEvento(false)} />}
           <Confirmar abierto={borrar} titulo="¿Borrar esta oportunidad?" texto="También se borran sus eventos de la agenda. Sus presupuestos se conservan." botonSi="Borrar" peligro onNo={() => setBorrar(false)} onSi={() => { setBorrar(false); eliminar.mutate(); }} />
         </div>
       )}
     </Panel>
+  );
+}
+
+/** El camino de la demo: solicitarla, entregarla con su URL y presentarla */
+function TarjetaDemo({ o, onPresentar }: { o: any; onPresentar: () => void }) {
+  const qc = useQueryClient();
+  const avisar = useAviso();
+  const [pedir, setPedir] = useState({ sector: o.sector ?? '', requisitos: o.requisitos ?? '', demo_para: '' });
+  const [lista, setLista] = useState({ url: o.demo_url ?? '', nota: '' });
+  const [corregir, setCorregir] = useState(false);
+  const hecho = (texto: string) => { qc.invalidateQueries(); avisar(texto); setCorregir(false); };
+  const solicitar = useMutation({
+    mutationFn: () => api<any>(`/oportunidades/${o.id}/solicitar-demo`, { method: 'POST', body: pedir }),
+    onSuccess: () => hecho('Demo solicitada: ya tienen el aviso'),
+    onError: (e: Error) => avisar(e.message, true),
+  });
+  const entregar = useMutation({
+    mutationFn: () => api(`/oportunidades/${o.id}/demo-lista`, { method: 'POST', body: lista }),
+    onSuccess: () => hecho('Demo lista: hemos avisado a quien la pidió'),
+    onError: (e: Error) => avisar(e.message, true),
+  });
+
+  const formularioUrl = (
+    <div className="space-y-3">
+      <Campo etiqueta="URL de la demo"><Entrada inputMode="url" value={lista.url} onChange={(e) => setLista({ ...lista, url: e.target.value })} placeholder="demo.cliente.es" /></Campo>
+      <Campo etiqueta="Nota para la comercial (opcional)"><Entrada value={lista.nota} onChange={(e) => setLista({ ...lista, nota: e.target.value })} placeholder="Usuario de prueba, qué enseñar primero…" /></Campo>
+      <Boton icono={<Check className="size-4" />} onClick={() => entregar.mutate()} cargando={entregar.isPending} disabled={!lista.url.trim()}>Demo lista</Boton>
+    </div>
+  );
+
+  // Aún sin solicitar
+  if (!o.demo_solicitada_en && !o.demo_url) {
+    return (
+      <Tarjeta titulo="Demo">
+        <div className="space-y-3">
+          <Campo etiqueta="Sector del cliente"><Entrada value={pedir.sector} onChange={(e) => setPedir({ ...pedir, sector: e.target.value })} placeholder="Hostelería, clínica dental, logística…" /></Campo>
+          <Campo etiqueta="Requisitos: la idea de lo que hay que crear"><AreaTexto rows={4} value={pedir.requisitos} onChange={(e) => setPedir({ ...pedir, requisitos: e.target.value })} placeholder="Web con reservas online, carta digital y galería. Le gusta el estilo de…" /></Campo>
+          <Campo etiqueta="Para cuándo (opcional)"><Entrada type="date" min={hoyISO()} value={pedir.demo_para} onChange={(e) => setPedir({ ...pedir, demo_para: e.target.value })} /></Campo>
+          <Boton icono={<Send className="size-4" />} onClick={() => solicitar.mutate()} cargando={solicitar.isPending}>Solicitar demo</Boton>
+        </div>
+      </Tarjeta>
+    );
+  }
+
+  const datos = (
+    <dl className="grid sm:grid-cols-2 gap-3">
+      <Dato etiqueta="Sector" valor={o.sector} />
+      <Dato etiqueta="Para el" valor={o.demo_para ? fecha(o.demo_para) : null} />
+      <div className="sm:col-span-2"><Dato etiqueta="Requisitos" valor={<span className="whitespace-pre-line">{o.requisitos}</span>} /></div>
+    </dl>
+  );
+
+  // Solicitada, a la espera de que esté hecha
+  if (!o.demo_url) {
+    return (
+      <Tarjeta titulo="Demo solicitada">
+        <div className="space-y-4">{datos}{formularioUrl}</div>
+      </Tarjeta>
+    );
+  }
+
+  return (
+    <Tarjeta titulo="Demo lista" accion={<button onClick={() => setCorregir((x) => !x)} className="text-sm font-medium text-marca-600">Cambiar URL</button>}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <a href={o.demo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-marca-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marca-700"><ExternalLink className="size-4" />Abrir demo</a>
+          {!['ganado', 'perdido'].includes(o.etapa) && <Boton variante="secundario" icono={<CalendarPlus className="size-4" />} onClick={onPresentar}>Programar presentación</Boton>}
+        </div>
+        {o.demo_nota && <p className="text-sm text-slate-600">{o.demo_nota}</p>}
+        {corregir && formularioUrl}
+        {datos}
+      </div>
+    </Tarjeta>
   );
 }
 
@@ -302,6 +384,8 @@ function FormularioOportunidad({ oportunidad, onCerrar, onCreada }: { oportunida
     importe: oportunidad?.importe ?? '',
     cierre_previsto: oportunidad?.cierre_previsto ?? '',
     responsable_id: oportunidad?.responsable_id ?? '',
+    sector: oportunidad?.sector ?? '',
+    requisitos: oportunidad?.requisitos ?? '',
     notas: oportunidad?.notas ?? '',
     etapa: oportunidad?.etapa ?? 'nuevo',
   }));

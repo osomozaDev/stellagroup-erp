@@ -7,7 +7,8 @@ Parte de la misma base que ObraFácil (el ERP de Heras Perea), adaptada de obras
 ## Qué hace
 
 - **Oportunidades → Clientes → Presupuestos → Contratos → Proyectos → Facturas.**
-- **CRM:** embudo de ventas por etapas (nuevo contacto, contactado, reunión, propuesta, ganado y perdido), con importe, responsable y próxima acción. Desde una oportunidad se crea el presupuesto con sus datos.
+- **CRM:** embudo de ventas por etapas (nuevo contacto, demo solicitada, presentar demo, reunión de cierre, propuesta, ganada y perdida), con importe, responsable y próxima acción. Desde una oportunidad se crea el presupuesto con sus datos.
+- **Demos:** la comercial solicita la demo desde la oportunidad con el sector y los requisitos. Llega como tarea en la agenda y aviso a los administradores (por Telegram o, si no lo tienen conectado, por correo). Al marcarla lista con su URL, se la pasa a quien la pidió, que la abre y programa la presentación desde la misma oportunidad. También funciona con `/nueva` y `/demos` en el bot.
 - **Agenda:** calendario de reuniones, llamadas, tareas y entregas, junto con los hitos, entregas de proyectos, renovaciones y cierres previstos de cada día. Se puede ver el de todo el equipo o el de una persona, y cada evento admite enlaces con nombre (la web demo, un documento…) que se abren directamente desde el calendario.
 - **Del presupuesto al proyecto:** cuando el cliente firma el presupuesto (o lo aceptas a mano) se crea el proyecto del tipo elegido, con un hito por partida. Si hacía falta, se da de alta el cliente; el arranque se apunta en la agenda y la oportunidad queda ganada. Cada proyecto tiene una **ficha** con los detalles de su tipo (de una web: dominio, plataforma, páginas, idiomas…).
 - **Presupuestos** numerados (`P2026-001`) con sus partidas, PDF, estados *borrador / enviado / aceptado / rechazado* y aviso de los caducados. Al aceptarlo se crea el proyecto con **un hito por partida**.

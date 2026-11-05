@@ -19,7 +19,7 @@ import { CobrosController, CobrosService, CronController } from './modulos/cobro
 import { CorreoService } from './comun/correo.service';
 import { PresupuestosController } from './modulos/presupuestos.controller';
 import { CatalogoController } from './modulos/catalogo.controller';
-import { AgendaController, OportunidadesController } from './modulos/crm.controller';
+import { AgendaController, DemosController, OportunidadesController } from './modulos/crm.controller';
 import { ContratosController, PlantillasContratoController } from './modulos/contratos.controller';
 import { FirmarController } from './modulos/firmar.controller';
 import { FirmasService } from './modulos/firmas.service';
@@ -31,6 +31,7 @@ import { AvisosTelegramService } from './modulos/avisos-telegram.service';
 import { BotTelegramService } from './modulos/bot-telegram.service';
 import { PresupuestosTelegramService } from './modulos/presupuestos-telegram.service';
 import { CrmTelegramService } from './modulos/crm-telegram.service';
+import { DemosService } from './modulos/demos.service';
 import { PortalClientesController } from './modulos/portal-clientes.controller';
 import { EnvioFacturaService } from './modulos/envio-factura.service';
 import { FacturarTelegramService } from './modulos/facturar-telegram.service';
@@ -54,6 +55,7 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     PresupuestosController,
     CatalogoController,
     OportunidadesController,
+    DemosController,
     AgendaController,
     ContratosController,
     PlantillasContratoController,
@@ -62,6 +64,6 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     AvisosCorreoController,
     TelegramController,
   ],
-  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, FirmasService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, PresupuestosTelegramService, CrmTelegramService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [FacturasService, CorreoService, CobrosService, ServiciosService, FirmasService, TelegramService, AvisosTelegramService, BotTelegramService, EnvioFacturaService, FacturarTelegramService, PresupuestosTelegramService, CrmTelegramService, DemosService, { provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AppModule {}

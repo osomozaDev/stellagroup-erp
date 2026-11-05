@@ -359,8 +359,9 @@ export type AceptarPresupuestoInput = z.infer<typeof aceptarPresupuestoSchema>;
 
 export const ETAPAS_OPORTUNIDAD = [
   { clave: 'nuevo', nombre: 'Nuevo contacto' },
-  { clave: 'contactado', nombre: 'Contactado' },
-  { clave: 'reunion', nombre: 'Reunión' },
+  { clave: 'demo_solicitada', nombre: 'Demo solicitada' },
+  { clave: 'demo_lista', nombre: 'Presentar demo' },
+  { clave: 'reunion_cierre', nombre: 'Reunión de cierre' },
   { clave: 'propuesta', nombre: 'Propuesta' },
   { clave: 'ganado', nombre: 'Ganado' },
   { clave: 'perdido', nombre: 'Perdido' },
@@ -394,6 +395,8 @@ export const oportunidadSchema = z.object({
   importe: numero.min(0).default(0),
   cierre_previsto: fecha,
   responsable_id: idOpcionalCrm,
+  sector: texto,
+  requisitos: texto,
   notas: texto,
 }).refine((o) => o.cliente_id || o.contacto_empresa || o.contacto_nombre, { message: 'Elige un cliente o escribe el contacto' });
 export type OportunidadInput = z.infer<typeof oportunidadSchema>;
@@ -420,13 +423,27 @@ export const TIPOS_EVENTO = [
 ] as const;
 type TipoEvento = (typeof TIPOS_EVENTO)[number]['clave'];
 
-/** Enlace de un evento (web demo, documento…). Sin esquema se le pone https://; solo se admite http y https */
+/** Dirección web: sin esquema se le pone https://; solo se admite http y https */
+const urlWeb = z.string().trim().min(1, 'Falta el enlace')
+  .transform((u) => (/^[a-z][a-z0-9+.-]*:/i.test(u) ? u : `https://${u}`))
+  .refine((u) => /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(u), 'El enlace no es válido');
+
+/** Enlace de un evento (web demo, documento…) */
 export const enlaceEventoSchema = z.object({
   nombre: texto,
-  url: z.string().trim().min(1, 'Falta el enlace')
-    .transform((u) => (/^[a-z][a-z0-9+.-]*:/i.test(u) ? u : `https://${u}`))
-    .refine((u) => /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(u), 'El enlace no es válido'),
+  url: urlWeb,
 });
+
+/** Lo que necesitan quienes hacen la demo */
+export const solicitudDemoSchema = z.object({
+  sector: z.string().trim().min(2, 'Indica el sector del cliente'),
+  requisitos: z.string().trim().min(10, 'Explica la idea de lo que hay que crear'),
+  demo_para: fecha,
+});
+export type SolicitudDemoInput = z.infer<typeof solicitudDemoSchema>;
+
+export const demoListaSchema = z.object({ url: urlWeb, nota: texto });
+export type DemoListaInput = z.infer<typeof demoListaSchema>;
 
 export const eventoSchema = z.object({
   titulo: z.string().trim().min(1, 'Ponle un título'),

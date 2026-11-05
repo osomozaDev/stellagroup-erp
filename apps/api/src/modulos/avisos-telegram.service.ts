@@ -4,14 +4,13 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { primerDiaMes } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
+import { fechaCorta, hoyMadrid } from '../comun/fechas';
 import { html, TelegramService } from '../comun/telegram.service';
 import { AgendaController } from './crm.controller';
 
+export { fechaCorta, hoyMadrid };
 export const euros = (n: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', useGrouping: 'always' } as unknown as Intl.NumberFormatOptions).format(n);
-export const fechaCorta = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
 const nombreMes = (periodo: string) => new Date(`${periodo}T12:00:00Z`).toLocaleDateString('es-ES', { month: 'long' });
-/** Fecha de hoy en España (el servidor de Vercel va en UTC) */
-export const hoyMadrid = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
 const sumarDias = (f: string, n: number) => new Date(Date.parse(`${f}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 export const diasEntre = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 export const doc = (f: { numero?: string | null }) => (f.numero ? `Factura ${f.numero}` : 'Prefactura');

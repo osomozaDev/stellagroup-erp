@@ -100,7 +100,7 @@ export class PresupuestosController {
     const numero = ok(await this.db.rpc('siguiente_numero_presupuesto', { p_anio: anio })) as string;
     const p = ok(await this.db.from('presupuestos').insert({ ...cabecera, numero, anio }).select().single()) as any;
     // La oportunidad de la que sale pasa a la etapa de propuesta
-    if (body.oportunidad_id) ok(await this.db.from('oportunidades').update({ etapa: 'propuesta' }).eq('id', body.oportunidad_id).in('etapa', ['nuevo', 'contactado', 'reunion']));
+    if (body.oportunidad_id) ok(await this.db.from('oportunidades').update({ etapa: 'propuesta' }).eq('id', body.oportunidad_id).in('etapa', ['nuevo', 'demo_solicitada', 'demo_lista', 'reunion_cierre']));
     // Desde Telegram se empieza sin partidas y se van añadiendo
     if (lineas.length) ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: p.id }))));
     return p;
