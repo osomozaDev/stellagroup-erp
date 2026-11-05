@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
 import { calcularTotales, EstadoPresupuesto, FORMAS_PAGO, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
 import { ElegirDelCatalogo } from './Catalogo';
@@ -30,6 +30,7 @@ export default function Presupuestos() {
   const { id } = useParams();
   const navegar = useNavigate();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState<'' | EstadoPresupuesto>('');
   const [nuevo, setNuevoEstado] = useState(params.get('nuevo') === '1');
@@ -97,7 +98,10 @@ export default function Presupuestos() {
   return (
     <>
       <ListaDetalle hayDetalle={!!id} lista={columna} detalle={id ? <DetallePresupuesto id={id} /> : <SinSeleccion texto="Elige un presupuesto para verlo" />} />
-      {nuevo && <FormularioPresupuesto onCerrar={() => setNuevo(false)} />}
+      {/* Desde el CRM llega ya con el cliente, el título y el tipo de proyecto */}
+      {nuevo && (
+        <FormularioPresupuesto inicial={location.state ?? undefined} onCerrar={() => setNuevo(false)} />
+      )}
     </>
   );
 }
@@ -181,7 +185,7 @@ function DetallePresupuesto({ id }: { id: string }) {
               <p className="text-sm text-slate-600">
                 {p.estado === 'borrador'
                   ? 'Envíaselo a firmar desde aquí abajo, o descarga el PDF, mándaselo tú y márcalo como enviado.'
-                  : `Válido hasta el ${fecha(p.valido_hasta)}. Cuando lo firme quedará aceptado solo; si te lo confirma por otro medio, márcalo tú.`}
+                  : `Válido hasta el ${fecha(p.valido_hasta)}. Cuando lo firme se creará el proyecto solo; si te lo confirma por otro medio, márcalo tú.`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
@@ -242,7 +246,7 @@ function AceptarPresupuesto({ presupuesto: p, onCerrar }: { presupuesto: any; on
   const avisar = useAviso();
   const navegar = useNavigate();
   const [nombre, setNombre] = useState(p.titulo);
-  const [tipo, setTipo] = useState('web');
+  const [tipo, setTipo] = useState(p.tipo_proyecto ?? 'web');
   const [inicio, setInicio] = useState(hoyISO());
   const aceptar = useMutation({
     mutationFn: (crear_proyecto: boolean) =>
@@ -291,16 +295,17 @@ function AceptarPresupuesto({ presupuesto: p, onCerrar }: { presupuesto: any; on
   );
 }
 
-function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; onCerrar: () => void }) {
+function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto?: any; inicial?: Record<string, string>; onCerrar: () => void }) {
   const qc = useQueryClient();
   const avisar = useAviso();
   const navegar = useNavigate();
   const { data: clientes } = useQuery({ queryKey: ['clientes', ''], queryFn: () => api<any[]>('/clientes') });
   const { data: empresa } = useQuery({ queryKey: ['empresa'], queryFn: () => api('/empresa') });
   const [v, setV] = useState(() => ({
-    cliente_id: presupuesto?.cliente_id ?? '',
-    cliente_texto: presupuesto?.cliente_texto ?? '',
-    titulo: presupuesto?.titulo ?? '',
+    cliente_id: presupuesto?.cliente_id ?? inicial?.cliente_id ?? '',
+    cliente_texto: presupuesto?.cliente_texto ?? inicial?.cliente_texto ?? '',
+    titulo: presupuesto?.titulo ?? inicial?.titulo ?? '',
+    tipo_proyecto: presupuesto?.tipo_proyecto ?? (inicial?.tipo_proyecto || 'web'),
     introduccion: presupuesto?.introduccion ?? '',
     fecha: presupuesto?.fecha ?? hoyISO(),
     valido_hasta: presupuesto?.valido_hasta ?? '',
@@ -318,7 +323,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
   useIvaHabitual(!presupuesto, (iva) => poner('iva_pct', iva));
   // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano
-  const [aMano, setAMano] = useState<'lista' | 'texto'>(presupuesto && !presupuesto.cliente_id ? 'texto' : 'lista');
+  const [aMano, setAMano] = useState<'lista' | 'texto'>((presupuesto && !presupuesto.cliente_id) || inicial?.cliente_texto ? 'texto' : 'lista');
   const [catalogo, setCatalogo] = useState(false);
   const cambiarLinea = (i: number, k: keyof Linea, valor: string) => setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: valor } : l)));
   const t = calcularTotales(lineas.map((l) => ({ cantidad: Number(l.cantidad) || 0, precio: Number(l.precio) || 0 })), Number(v.iva_pct) || 0, Number(v.retencion_pct) || 0);
@@ -330,6 +335,7 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
         cliente_id: aMano === 'lista' ? v.cliente_id : null,
         cliente_texto: aMano === 'texto' ? v.cliente_texto : null,
         valido_hasta: v.valido_hasta || null,
+        oportunidad_id: presupuesto ? undefined : inicial?.oportunidad_id || null,
         lineas,
       };
       return presupuesto ? api<any>(`/presupuestos/${presupuesto.id}`, { method: 'PATCH', body }) : api<any>('/presupuestos', { method: 'POST', body });
@@ -377,6 +383,11 @@ function FormularioPresupuesto({ presupuesto, onCerrar }: { presupuesto?: any; o
             )}
           </div>
           <Campo etiqueta="Título" className="sm:col-span-2"><Entrada value={v.titulo} onChange={(e) => poner('titulo', e.target.value)} placeholder="Nueva web corporativa con blog" /></Campo>
+          <Campo etiqueta="Qué proyecto es" className="sm:col-span-2" ayuda="Cuando el cliente lo firme se crea el proyecto de este tipo, con un hito por partida">
+            <Selector value={v.tipo_proyecto} onChange={(e) => poner('tipo_proyecto', e.target.value)}>
+              {TIPOS_PROYECTO.map((x) => <option key={x.clave} value={x.clave}>{x.nombre}</option>)}
+            </Selector>
+          </Campo>
           <Campo etiqueta="Fecha"><Entrada type="date" value={v.fecha} onChange={(e) => poner('fecha', e.target.value)} /></Campo>
           <Campo etiqueta="Válido hasta" ayuda={`Si lo dejas vacío, ${empresa?.validez_presupuesto_dias ?? 30} días`}>
             <Entrada type="date" value={v.valido_hasta} onChange={(e) => poner('valido_hasta', e.target.value)} />

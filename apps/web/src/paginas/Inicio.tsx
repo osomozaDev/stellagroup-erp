@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarPlus, CheckCircle2, Clock, FilePlus2, FileSignature, FolderKanban, Receipt, RefreshCw, Target, Wallet } from 'lucide-react';
+import { ArrowRight, CalendarDays, CalendarPlus, Trophy, CheckCircle2, Clock, FilePlus2, FileSignature, FolderKanban, Receipt, RefreshCw, Target, Wallet } from 'lucide-react';
 import { nombreTipoServicio } from '@stella/shared';
 import { api } from '../lib/api';
 import { euros, fecha, MESES, nombreMes } from '../lib/formato';
@@ -75,6 +75,48 @@ export default function Inicio() {
             )}
           </Tarjeta>
         </div>
+
+        {(puede('agenda') || puede('crm')) && (
+          <div className="grid lg:grid-cols-2 gap-5">
+            {puede('agenda') && (
+              <Tarjeta titulo="Hoy en la agenda" accion={<Link to="/agenda" className="text-sm font-medium text-marca-600">Agenda</Link>}>
+                {r.agenda_hoy.length === 0 ? <p className="text-sm text-slate-500">Nada pendiente para hoy.</p> : (
+                  <ul className="-my-2 divide-y divide-slate-100">
+                    {r.agenda_hoy.map((e: any) => {
+                      const dia = new Date(e.inicio).toLocaleDateString('sv-SE');
+                      const atrasado = dia < new Date().toLocaleDateString('sv-SE');
+                      return (
+                        <li key={e.id}>
+                          <Link to="/agenda" className="flex items-center gap-3 py-2.5">
+                            <CalendarDays className={cx('size-5 shrink-0', atrasado ? 'text-red-500' : 'text-marca-500')} />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">{e.titulo}</p>
+                              <p className={cx('truncate text-xs', atrasado ? 'text-red-600' : 'text-slate-500')}>
+                                {atrasado ? `Atrasado: ${fecha(dia)}` : e.todo_el_dia ? 'Todo el día' : new Date(e.inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                {e.cliente?.nombre && ` · ${e.cliente.nombre}`}
+                              </p>
+                            </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Tarjeta>
+            )}
+            {puede('crm') && (
+              <Link to="/crm" className="flex items-center gap-4 rounded-2xl bg-white border border-slate-200/70 p-5 hover:border-marca-200 hover:shadow-sm transition">
+                <span className="inline-flex rounded-xl p-3 bg-marca-50 text-marca-600"><Trophy className="size-6" /></span>
+                <div className="flex-1">
+                  <p className="text-sm text-slate-500">En el embudo de ventas</p>
+                  <p className="text-xl md:text-2xl font-bold tracking-tight">{euros(r.embudo.importe)}</p>
+                  <p className="text-sm text-slate-500">{r.embudo.abiertas === 1 ? '1 oportunidad abierta' : `${r.embudo.abiertas} oportunidades abiertas`}</p>
+                </div>
+                <ArrowRight className="size-4 text-slate-400" />
+              </Link>
+            )}
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-2 gap-5">
           <Tarjeta titulo="Renovaciones en 30 días" accion={<Link to="/servicios?facturar=1" className="text-sm font-medium text-marca-600">Facturar</Link>}>

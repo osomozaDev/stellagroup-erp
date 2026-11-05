@@ -24,6 +24,8 @@ import Gestoria from './paginas/Gestoria';
 import Presupuestos from './paginas/Presupuestos';
 import Servicios from './paginas/Servicios';
 import Contratos from './paginas/Contratos';
+import Crm from './paginas/Crm';
+import Agenda from './paginas/Agenda';
 import Catalogo from './paginas/Catalogo';
 import Firmar from './paginas/Firmar';
 import PortalClientes from './paginas/PortalClientes';
@@ -105,6 +107,8 @@ function AppOficina() {
         <Route path="empleados/:id?" element={<ConPermiso permiso="empleados"><Empleados /></ConPermiso>} />
         <Route path="nominas" element={<ConPermiso permiso="nominas"><Nominas /></ConPermiso>} />
         <Route path="presupuestos/:id?" element={<ConPermiso permiso="presupuestos"><Presupuestos /></ConPermiso>} />
+        <Route path="crm/:id?" element={<ConPermiso permiso="crm"><Crm /></ConPermiso>} />
+        <Route path="agenda" element={<ConPermiso permiso="agenda"><Agenda /></ConPermiso>} />
         <Route path="contratos/:id?" element={<ConPermiso permiso="contratos"><Contratos /></ConPermiso>} />
         <Route path="catalogo" element={<ConPermiso permiso="presupuestos"><Catalogo /></ConPermiso>} />
         <Route path="servicios/:id?" element={<ConPermiso permiso="servicios"><Servicios /></ConPermiso>} />

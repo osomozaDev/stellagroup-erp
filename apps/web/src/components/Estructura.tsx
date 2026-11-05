@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Briefcase, CalendarPlus, ExternalLink, FilePlus2, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
+  Briefcase, CalendarDays, CalendarPlus, Trophy, ExternalLink, FilePlus2, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -14,6 +14,8 @@ import Marca from './Marca';
 const menu = [
   { a: '/', texto: 'Inicio', icono: Home },
   { a: '/facturas', texto: 'Facturas', icono: FileText },
+  { a: '/crm', texto: 'CRM', icono: Trophy },
+  { a: '/agenda', texto: 'Agenda', icono: CalendarDays },
   { a: '/clientes', texto: 'Clientes', icono: Users },
   { a: '/proyectos', texto: 'Proyectos', icono: FolderKanban },
   { a: '/presupuestos', texto: 'Presupuestos', icono: FileSignature },

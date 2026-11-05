@@ -1,6 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { clienteDeTexto, importeMensual, primerDiaMes } from '@stella/shared';
+import { clienteDeTexto, importeMensual, instanteMadrid, primerDiaMes } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ok } from '../comun/db';
 
@@ -44,6 +44,11 @@ export class InicioController {
       this.db.from('presupuestos').select('id, numero, titulo, total, fecha, valido_hasta, cliente_texto, cliente:clientes(nombre)').eq('estado', 'enviado').order('fecha'),
       // Para las cifras de presupuestos del inicio
       this.db.from('presupuestos').select('estado, base, fecha, respondido_en').gte('fecha', `${anio}-01-01`),
+    ]);
+    // Lo de hoy y lo atrasado de la agenda, y lo que hay abierto en el embudo
+    const [agenda, embudo] = await Promise.all([
+      this.db.from('eventos').select('id, titulo, tipo, inicio, todo_el_dia, cliente:clientes(nombre)').is('completado_en', null).lte('inicio', instanteMadrid(hoy, '23:59:59')).order('inicio').limit(8),
+      this.db.from('oportunidades').select('importe').not('etapa', 'in', '(ganado,perdido)'),
     ]);
     const datosEmpresa = ok(empresa) as { cif: string | null; iban: string | null; accion_principal: string };
     const presAnio = ok(presupuestosAnio) as any[];
@@ -93,6 +98,8 @@ export class InicioController {
         // Qué parte de los presupuestos que ya tienen respuesta se han aceptado
         tasa_aceptacion: respondidos.length ? Math.round((aceptadosAnio.length / respondidos.length) * 100) : null,
       },
+      agenda_hoy: ok(agenda) as any[],
+      embudo: { abiertas: (ok(embudo) as any[]).length, importe: (ok(embudo) as any[]).reduce((t, o) => t + Number(o.importe), 0) },
       presupuestos_pendientes: (ok(presupuestos) as any[]).map((p) => ({ ...p, cliente: p.cliente ?? clienteDeTexto(p.cliente_texto) })),
       por_cobrar: porCobrar.reduce((s, f) => s + Number(f.total), 0),
       vencidas: porCobrar.filter((f) => f.vencimiento && f.vencimiento < hoy),

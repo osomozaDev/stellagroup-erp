@@ -6,7 +6,10 @@ Parte de la misma base que ObraFácil (el ERP de Heras Perea), adaptada de obras
 
 ## Qué hace
 
-- **Clientes → Presupuestos → Contratos → Proyectos → Facturas.**
+- **Oportunidades → Clientes → Presupuestos → Contratos → Proyectos → Facturas.**
+- **CRM:** embudo de ventas por etapas (nuevo contacto, contactado, reunión, propuesta, ganado y perdido), con importe, responsable y próxima acción. Desde una oportunidad se crea el presupuesto con sus datos.
+- **Agenda:** calendario de reuniones, llamadas, tareas y entregas, junto con los hitos, entregas de proyectos, renovaciones y cierres previstos de cada día. Se puede ver el de todo el equipo o el de una persona, y cada evento admite enlaces con nombre (la web demo, un documento…) que se abren directamente desde el calendario.
+- **Del presupuesto al proyecto:** cuando el cliente firma el presupuesto (o lo aceptas a mano) se crea el proyecto del tipo elegido, con un hito por partida. Si hacía falta, se da de alta el cliente; el arranque se apunta en la agenda y la oportunidad queda ganada. Cada proyecto tiene una **ficha** con los detalles de su tipo (de una web: dominio, plataforma, páginas, idiomas…).
 - **Presupuestos** numerados (`P2026-001`) con sus partidas, PDF, estados *borrador / enviado / aceptado / rechazado* y aviso de los caducados. Al aceptarlo se crea el proyecto con **un hito por partida**.
 - **Contratos** a partir de plantillas (desarrollo de software, mantenimiento y hosting, NDA) que se rellenan solas con los datos del cliente, el proyecto, el presupuesto y sus servicios. Los datos que faltan salen marcados. Las plantillas se editan desde la app.
 - **Firma electrónica** de presupuestos y contratos: el cliente recibe un enlace personal, revisa el documento, confirma con un código de un solo uso que le llega al correo y firma con el dedo o el ratón. Se guardan las evidencias (correo verificado, fechas, IP, navegador y huella SHA-256 del documento congelado al enviarlo) y el PDF firmado lleva una página de certificado. Al firmar, el presupuesto queda aceptado y el contrato firmado; la oficina recibe aviso por correo y Telegram y el cliente su copia. Es una firma electrónica según el art. 25 del Reglamento eIDAS; no es una firma cualificada con certificado.

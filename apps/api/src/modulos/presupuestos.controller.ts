@@ -12,6 +12,7 @@ import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { remitenteDe } from '../comun/remitente';
 import { clienteDePresupuesto } from '../comun/alta-cliente';
+import { proyectoDePresupuesto } from '../comun/proyecto-presupuesto';
 import { textoDeContrato } from '../comun/contrato-de-plantilla';
 import { z } from 'zod';
 
@@ -98,6 +99,8 @@ export class PresupuestosController {
     }
     const numero = ok(await this.db.rpc('siguiente_numero_presupuesto', { p_anio: anio })) as string;
     const p = ok(await this.db.from('presupuestos').insert({ ...cabecera, numero, anio }).select().single()) as any;
+    // La oportunidad de la que sale pasa a la etapa de propuesta
+    if (body.oportunidad_id) ok(await this.db.from('oportunidades').update({ etapa: 'propuesta' }).eq('id', body.oportunidad_id).in('etapa', ['nuevo', 'contactado', 'reunion']));
     // Desde Telegram se empieza sin partidas y se van añadiendo
     if (lineas.length) ok(await this.db.from('presupuesto_lineas').insert(lineas.map((l) => ({ ...l, presupuesto_id: p.id }))));
     return p;
@@ -138,41 +141,10 @@ export class PresupuestosController {
     if (p.estado === 'aceptado' && (p.proyecto_id || !body.crear_proyecto)) throw new BadRequestException('Este presupuesto ya está aceptado');
     let proyectoId: string | null = p.proyecto_id ?? null;
     // Al aceptarlo pasa a ser cliente: si solo estaba escrito a mano, se da de alta (con o sin proyecto)
-    const clienteId = (await clienteDePresupuesto(this.db, id)).id;
-    if (body.crear_proyecto && !proyectoId) {
-      const proyecto = ok(
-        await this.db
-          .from('proyectos')
-          .insert({
-            cliente_id: clienteId,
-            nombre: body.nombre || p.titulo,
-            referencia: p.numero,
-            tipo: body.tipo,
-            descripcion: p.introduccion,
-            concepto: p.titulo,
-            modalidad: 'hitos',
-            estado: 'activo',
-            fecha_inicio: body.fecha_inicio || hoy(),
-            presupuesto: p.base,
-            iva_pct: p.iva_pct,
-            retencion_pct: p.retencion_pct,
-          })
-          .select('id')
-          .single(),
-      ) as any;
-      proyectoId = proyecto.id;
-      ok(
-        await this.db.from('hitos').insert(
-          p.lineas.map((l: any, i: number) => ({
-            proyecto_id: proyectoId,
-            orden: i,
-            nombre: l.concepto.split('\n')[0].slice(0, 200),
-            descripcion: l.concepto.includes('\n') ? l.concepto.split('\n').slice(1).join('\n') : null,
-            importe: l.importe,
-          })),
-        ),
-      );
-    }
+    await clienteDePresupuesto(this.db, id);
+    if (body.crear_proyecto) proyectoId = (await proyectoDePresupuesto(this.db, id, body)).id;
+    // Sin proyecto, la venta también está cerrada
+    if (p.oportunidad_id) ok(await this.db.from('oportunidades').update({ etapa: 'ganado', cerrada_en: new Date().toISOString() }).eq('id', p.oportunidad_id).neq('etapa', 'ganado'));
     // Aceptado a mano (p. ej. firmado en papel): el enlace de firma pendiente deja de valer
     ok(await this.db.from('firmas').update({ estado: 'anulado' }).eq('documento_tipo', 'presupuesto').eq('documento_id', id).eq('estado', 'pendiente'));
     return ok(
@@ -244,6 +216,8 @@ export class PresupuestosController {
     return this.crear({
       cliente_id: p.cliente_id,
       cliente_texto: p.cliente_texto,
+      tipo_proyecto: p.tipo_proyecto,
+      oportunidad_id: p.oportunidad_id,
       titulo: `${p.titulo} (copia)`,
       introduccion: p.introduccion,
       fecha: hoy(),

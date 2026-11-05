@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
-  ESTADOS_PROYECTO, EstadoProyecto, facturarHitoSchema, HitoInput, hitoSchema, HorasSemanaInput, horasSemanaSchema, ProyectoInput, proyectoSchema, semanasDelMes,
+  ESTADOS_PROYECTO, EstadoProyecto, facturarHitoSchema, fichaProyectoSchema, HitoInput, hitoSchema, HorasSemanaInput, horasSemanaSchema, ProyectoInput, proyectoSchema, semanasDelMes,
 } from '@stella/shared';
 import { z } from 'zod';
 import { SUPABASE } from '../comun/supabase.module';
@@ -49,7 +49,7 @@ export class ProyectosController {
       await this.db
         .from('proyectos')
         .select(
-          '*, cliente:clientes(*), facturas(id, numero, fecha, vencimiento, total, base, retencion_importe, estado, periodo, rectifica_id), empleados(id, nombre, apellidos, puesto), hitos(*, factura:facturas(id, numero, estado, total)), servicios(id, nombre, tipo, precio, periodicidad, proxima_renovacion, estado), presupuestos(id, numero, titulo, total, estado)',
+          '*, cliente:clientes(*), facturas(id, numero, fecha, vencimiento, total, base, retencion_importe, estado, periodo, rectifica_id), empleados(id, nombre, apellidos, puesto), hitos(*, factura:facturas(id, numero, estado, total)), servicios(id, nombre, tipo, precio, periodicidad, proxima_renovacion, estado), presupuestos!presupuestos_proyecto_id_fkey(id, numero, titulo, total, estado), eventos(id, titulo, tipo, inicio, todo_el_dia, completado_en)',
         )
         .eq('id', id)
         .order('fecha', { referencedTable: 'facturas', ascending: false })
@@ -94,6 +94,12 @@ export class ProyectosController {
   async borrarHoras(@Param('id') id: string, @Param('inicio') inicio: string) {
     ok(await this.db.from('horas_semana').delete().eq('proyecto_id', id).eq('inicio', inicio));
     return { ok: true };
+  }
+
+  /** Detalles del proyecto según su tipo: dominio, plataforma, páginas… */
+  @Patch(':id/ficha')
+  async guardarFicha(@Param('id') id: string, @Body(new ZodPipe(fichaProyectoSchema)) body: { ficha: Record<string, string> }) {
+    return ok(await this.db.from('proyectos').update({ ficha: body.ficha }).eq('id', id).select('id, ficha').single());
   }
 
   /** Prefacturas de todos los meses del proyecto */

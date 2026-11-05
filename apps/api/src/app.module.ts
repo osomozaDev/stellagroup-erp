@@ -19,6 +19,7 @@ import { CobrosController, CobrosService, CronController } from './modulos/cobro
 import { CorreoService } from './comun/correo.service';
 import { PresupuestosController } from './modulos/presupuestos.controller';
 import { CatalogoController } from './modulos/catalogo.controller';
+import { AgendaController, OportunidadesController } from './modulos/crm.controller';
 import { ContratosController, PlantillasContratoController } from './modulos/contratos.controller';
 import { FirmarController } from './modulos/firmar.controller';
 import { FirmasService } from './modulos/firmas.service';
@@ -51,6 +52,8 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     CronController,
     PresupuestosController,
     CatalogoController,
+    OportunidadesController,
+    AgendaController,
     ContratosController,
     PlantillasContratoController,
     FirmarController,

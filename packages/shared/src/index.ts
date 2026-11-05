@@ -112,6 +112,64 @@ export const TIPOS_PROYECTO = [
   { clave: 'otro', nombre: 'Otro' },
 ] as const;
 export type TipoProyecto = (typeof TIPOS_PROYECTO)[number]['clave'];
+
+type CampoFicha = { clave: string; nombre: string; ayuda?: string; largo?: boolean };
+const camposWeb: CampoFicha[] = [
+  { clave: 'dominio', nombre: 'Dominio' },
+  { clave: 'plataforma', nombre: 'Plataforma', ayuda: 'WordPress, Shopify, a medida…' },
+  { clave: 'hosting', nombre: 'Hosting' },
+  { clave: 'paginas', nombre: 'Páginas o secciones' },
+  { clave: 'idiomas', nombre: 'Idiomas' },
+  { clave: 'contenidos', nombre: 'Textos y fotos', ayuda: 'Quién los aporta y cuándo' },
+];
+const camposDesarrollo: CampoFicha[] = [
+  { clave: 'plataformas', nombre: 'Plataformas', ayuda: 'Web, iOS, Android…' },
+  { clave: 'tecnologia', nombre: 'Tecnología' },
+  { clave: 'repositorio', nombre: 'Repositorio' },
+  { clave: 'entornos', nombre: 'Entornos', ayuda: 'Pruebas y producción' },
+  { clave: 'usuarios', nombre: 'Usuarios previstos' },
+];
+const camposIntegracion: CampoFicha[] = [
+  { clave: 'herramientas', nombre: 'Herramientas que se conectan' },
+  { clave: 'proceso', nombre: 'Proceso que se automatiza', largo: true },
+  { clave: 'accesos_api', nombre: 'Claves y API necesarias' },
+];
+
+/** Detalles que se apuntan en la ficha de cada tipo de proyecto. Los comunes salen siempre. */
+export const CAMPOS_FICHA: Record<TipoProyecto, CampoFicha[]> = {
+  web: camposWeb,
+  ecommerce: [
+    ...camposWeb,
+    { clave: 'productos', nombre: 'Número de productos' },
+    { clave: 'pagos', nombre: 'Formas de pago' },
+    { clave: 'envios', nombre: 'Envíos' },
+  ],
+  software: camposDesarrollo,
+  app: [...camposDesarrollo, { clave: 'tiendas', nombre: 'Cuentas de App Store y Google Play' }],
+  automatizacion: camposIntegracion,
+  integracion: camposIntegracion,
+  ia: [
+    { clave: 'caso_uso', nombre: 'Para qué se usa', largo: true },
+    { clave: 'canales', nombre: 'Canales', ayuda: 'Web, WhatsApp, correo…' },
+    { clave: 'datos', nombre: 'Datos de partida' },
+    ...camposIntegracion.slice(0, 1),
+  ],
+  seo: [
+    { clave: 'dominio', nombre: 'Dominio' },
+    { clave: 'palabras', nombre: 'Búsquedas objetivo', largo: true },
+    { clave: 'competidores', nombre: 'Competidores' },
+    { clave: 'analitica', nombre: 'Acceso a Analytics y Search Console' },
+  ],
+  otro: [],
+};
+export const CAMPOS_FICHA_COMUNES: CampoFicha[] = [
+  { clave: 'contacto', nombre: 'Persona de contacto del proyecto' },
+  { clave: 'objetivo', nombre: 'Objetivo', largo: true },
+  { clave: 'accesos', nombre: 'Dónde están los accesos', ayuda: 'Nunca contraseñas: solo dónde encontrarlos' },
+  { clave: 'observaciones', nombre: 'Observaciones', largo: true },
+];
+
+export const fichaProyectoSchema = z.object({ ficha: z.record(z.string().trim().max(2000)) });
 export const nombreTipoProyecto = (t: string) => TIPOS_PROYECTO.find((x) => x.clave === t)?.nombre ?? t;
 
 /** hitos: importe cerrado repartido en entregas · horas: cada mes se factura lo trabajado */
@@ -241,6 +299,9 @@ export const presupuestoSchema = z.object({
   forma_pago: z.enum(['unico', 'dos', 'tres']).default('unico'),
   condiciones: texto,
   notas: texto,
+  // Qué proyecto saldrá al cerrarlo y de qué oportunidad viene
+  tipo_proyecto: z.enum(TIPOS_PROYECTO.map((t) => t.clave) as [TipoProyecto, ...TipoProyecto[]]).optional().nullable(),
+  oportunidad_id: z.string().uuid().nullable().optional(),
   lineas: z.array(lineaSchema).min(1, 'Añade al menos una línea'),
 }).refine((p) => p.cliente_id || p.cliente_texto, { message: 'Elige un cliente o escribe sus datos' });
 export type PresupuestoInput = z.infer<typeof presupuestoSchema>;
@@ -289,10 +350,99 @@ export function clienteDeTexto(texto?: string | null) {
 export const aceptarPresupuestoSchema = z.object({
   crear_proyecto: z.boolean().default(true),
   nombre: z.string().trim().optional(),
-  tipo: z.enum(TIPOS_PROYECTO.map((t) => t.clave) as [TipoProyecto, ...TipoProyecto[]]).default('web'),
+  tipo: z.enum(TIPOS_PROYECTO.map((t) => t.clave) as [TipoProyecto, ...TipoProyecto[]]).optional(),
   fecha_inicio: fecha,
 });
 export type AceptarPresupuestoInput = z.infer<typeof aceptarPresupuestoSchema>;
+
+// ───────────── CRM: oportunidades y agenda ─────────────
+
+export const ETAPAS_OPORTUNIDAD = [
+  { clave: 'nuevo', nombre: 'Nuevo contacto' },
+  { clave: 'contactado', nombre: 'Contactado' },
+  { clave: 'reunion', nombre: 'Reunión' },
+  { clave: 'propuesta', nombre: 'Propuesta' },
+  { clave: 'ganado', nombre: 'Ganado' },
+  { clave: 'perdido', nombre: 'Perdido' },
+] as const;
+export type EtapaOportunidad = (typeof ETAPAS_OPORTUNIDAD)[number]['clave'];
+const etapas = ETAPAS_OPORTUNIDAD.map((e) => e.clave) as [EtapaOportunidad, ...EtapaOportunidad[]];
+export const nombreEtapa = (e: string) => ETAPAS_OPORTUNIDAD.find((x) => x.clave === e)?.nombre ?? e;
+
+export const ORIGENES_OPORTUNIDAD = [
+  { clave: 'web', nombre: 'Web' },
+  { clave: 'recomendacion', nombre: 'Recomendación' },
+  { clave: 'redes', nombre: 'Redes sociales' },
+  { clave: 'llamada', nombre: 'Llamada' },
+  { clave: 'evento', nombre: 'Evento' },
+  { clave: 'otro', nombre: 'Otro' },
+] as const;
+type OrigenOportunidad = (typeof ORIGENES_OPORTUNIDAD)[number]['clave'];
+
+const idOpcionalCrm = z.string().uuid().optional().nullable().or(z.literal('')).transform((v) => v || null);
+
+export const oportunidadSchema = z.object({
+  titulo: z.string().trim().min(1, 'Ponle un título: qué quiere el cliente'),
+  etapa: z.enum(etapas).default('nuevo'),
+  cliente_id: idOpcionalCrm,
+  contacto_empresa: texto,
+  contacto_nombre: texto,
+  contacto_email: texto,
+  contacto_telefono: texto,
+  origen: z.enum(ORIGENES_OPORTUNIDAD.map((o) => o.clave) as [OrigenOportunidad, ...OrigenOportunidad[]]).default('otro'),
+  tipo_proyecto: z.enum(TIPOS_PROYECTO.map((t) => t.clave) as [TipoProyecto, ...TipoProyecto[]]).optional().nullable().or(z.literal('')).transform((v) => v || null),
+  importe: numero.min(0).default(0),
+  cierre_previsto: fecha,
+  responsable_id: idOpcionalCrm,
+  notas: texto,
+}).refine((o) => o.cliente_id || o.contacto_empresa || o.contacto_nombre, { message: 'Elige un cliente o escribe el contacto' });
+export type OportunidadInput = z.infer<typeof oportunidadSchema>;
+
+export const moverOportunidadSchema = z.object({
+  etapa: z.enum(etapas),
+  motivo_perdida: texto,
+});
+export type MoverOportunidadInput = z.infer<typeof moverOportunidadSchema>;
+
+/** Momento exacto de una hora de España (la agenda se guarda con zona horaria y España cambia entre +01:00 y +02:00) */
+export function instanteMadrid(dia: string, hora = '00:00:00') {
+  const utc = Date.parse(`${dia}T${hora}Z`);
+  const enMadrid = Date.parse(`${new Date(utc).toLocaleString('sv-SE', { timeZone: 'Europe/Madrid' }).replace(' ', 'T')}Z`);
+  return new Date(utc - (enMadrid - utc)).toISOString();
+}
+
+export const TIPOS_EVENTO = [
+  { clave: 'reunion', nombre: 'Reunión' },
+  { clave: 'llamada', nombre: 'Llamada' },
+  { clave: 'tarea', nombre: 'Tarea' },
+  { clave: 'entrega', nombre: 'Entrega' },
+  { clave: 'otro', nombre: 'Otro' },
+] as const;
+type TipoEvento = (typeof TIPOS_EVENTO)[number]['clave'];
+
+/** Enlace de un evento (web demo, documento…). Sin esquema se le pone https://; solo se admite http y https */
+export const enlaceEventoSchema = z.object({
+  nombre: texto,
+  url: z.string().trim().min(1, 'Falta el enlace')
+    .transform((u) => (/^[a-z][a-z0-9+.-]*:/i.test(u) ? u : `https://${u}`))
+    .refine((u) => /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(u), 'El enlace no es válido'),
+});
+
+export const eventoSchema = z.object({
+  titulo: z.string().trim().min(1, 'Ponle un título'),
+  tipo: z.enum(TIPOS_EVENTO.map((t) => t.clave) as [TipoEvento, ...TipoEvento[]]).default('reunion'),
+  inicio: z.string().min(1, 'Pon la fecha'),
+  fin: fecha,
+  todo_el_dia: z.coerce.boolean().default(false),
+  lugar: texto,
+  descripcion: texto,
+  enlaces: z.array(enlaceEventoSchema).max(10, 'Como mucho 10 enlaces').default([]),
+  cliente_id: idOpcionalCrm,
+  oportunidad_id: idOpcionalCrm,
+  proyecto_id: idOpcionalCrm,
+  responsable_id: idOpcionalCrm,
+}).refine((e) => !e.fin || e.fin >= e.inicio, { message: 'El final no puede ser anterior al inicio' });
+export type EventoInput = z.infer<typeof eventoSchema>;
 
 // ───────────── Catálogo de productos y servicios ─────────────
 
@@ -720,6 +870,8 @@ export const PERMISOS = [
   { clave: 'facturas', nombre: 'Facturas', descripcion: 'Ver, crear y emitir facturas y prefacturas' },
   { clave: 'clientes', nombre: 'Clientes', descripcion: 'Datos y condiciones de pago de los clientes' },
   { clave: 'proyectos', nombre: 'Proyectos', descripcion: 'Proyectos, hitos, horas y prefacturas' },
+  { clave: 'crm', nombre: 'CRM', descripcion: 'Oportunidades de venta y su seguimiento' },
+  { clave: 'agenda', nombre: 'Agenda', descripcion: 'Calendario de reuniones, llamadas, tareas y entregas' },
   { clave: 'presupuestos', nombre: 'Presupuestos', descripcion: 'Preparar, enviar a firmar y aceptar presupuestos' },
   { clave: 'contratos', nombre: 'Contratos', descripcion: 'Contratos, sus plantillas y la firma electrónica' },
   { clave: 'servicios', nombre: 'Servicios', descripcion: 'Hosting, dominios, mantenimientos y sus renovaciones' },
@@ -742,6 +894,8 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
   proyectos: 'proyectos',
   hitos: 'proyectos',
   presupuestos: 'presupuestos',
+  oportunidades: 'crm',
+  agenda: 'agenda',
   catalogo: 'presupuestos',
   contratos: 'contratos',
   'plantillas-contrato': 'contratos',
@@ -761,9 +915,10 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
  * una factura hay que elegir cliente y proyecto). Solo lectura (GET).
  */
 const LECTURA_TAMBIEN: Partial<Record<Permiso, Permiso[]>> = {
-  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros', 'contratos'],
-  proyectos: ['facturas', 'clientes', 'empleados', 'presupuestos', 'servicios', 'contratos'],
-  empleados: ['proyectos'],
+  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros', 'contratos', 'crm', 'agenda'],
+  proyectos: ['facturas', 'clientes', 'empleados', 'presupuestos', 'servicios', 'contratos', 'crm', 'agenda'],
+  empleados: ['proyectos', 'crm', 'agenda'],
+  crm: ['agenda', 'presupuestos'],
   presupuestos: ['clientes', 'proyectos', 'contratos'],
   servicios: ['inicio', 'clientes', 'contratos'],
   facturas: ['cobros'],

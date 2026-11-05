@@ -202,3 +202,24 @@ insert into catalogo (tipo, categoria, nombre, descripcion, unidad, precio, cost
   ('servicio', 'Fotografía', 'Fotografía: 5 fotos editadas', 'Sesión gastronómica con 5 fotos editadas · entrega digital para web y redes', 'ud', 79, null),
   ('servicio', 'Fotografía', 'Fotografía: 12 fotos editadas', 'Sesión gastronómica con 12 fotos editadas · entrega digital para web y redes', 'ud', 129, null),
   ('servicio', 'Fotografía', 'Fotografía: 25 fotos editadas', 'Sesión gastronómica con 25 fotos editadas · entrega digital para web y redes', 'ud', 199, null);
+
+-- ───────────── CRM ─────────────
+insert into oportunidades (id, titulo, etapa, cliente_id, contacto_empresa, contacto_nombre, contacto_email, contacto_telefono, origen, tipo_proyecto, importe, cierre_previsto, responsable_id, notas) values
+  ('d1111111-1111-4111-8111-111111111111', 'Web para restaurante con reservas', 'nuevo', null, 'Restaurante La Brasa', 'Marcos Peña', 'marcos@labrasa.es', '600 700 800', 'web', 'web', 2400, current_date + 30, (select id from empleados where nombre = 'Laura'), 'Ha escrito por el formulario de la web. Quiere reservas online antes de Navidad.'),
+  ('d2222222-2222-4222-8222-222222222222', 'Automatizar presupuestos y seguimiento comercial', 'contactado', '33333333-3333-4333-8333-333333333333', null, null, null, null, 'recomendacion', 'automatizacion', 4500, current_date + 45, (select id from empleados where nombre = 'Daniel'), null),
+  ('d3333333-3333-4333-8333-333333333333', 'Tienda online de ropa infantil', 'reunion', null, 'Pequeños Pasos', 'Nuria Vidal', 'nuria@pequenospasos.es', '611 222 333', 'redes', 'ecommerce', 6800, current_date + 21, (select id from empleados where nombre = 'Laura'), 'Viene de Instagram. Tiene 200 productos en un Excel.'),
+  ('d4444444-4444-4444-8444-444444444444', 'SEO técnico de la web de la clínica', 'propuesta', '22222222-2222-4222-8222-222222222222', null, null, null, null, 'llamada', 'seo', 1500, current_date + 10, (select id from empleados where nombre = 'Laura'), null),
+  ('d5555555-5555-4555-8555-555555555555', 'Chatbot para atención al cliente', 'perdido', '55555555-5555-4555-8555-555555555555', null, null, null, null, 'evento', 'ia', 3200, null, null, null);
+update oportunidades set motivo_perdida = 'Lo dejan para el año que viene por presupuesto', cerrada_en = now() - interval '6 days' where etapa = 'perdido';
+
+insert into eventos (titulo, tipo, inicio, fin, lugar, descripcion, oportunidad_id, cliente_id, proyecto_id, responsable_id) values
+  ('Llamada con Marcos (La Brasa)', 'llamada', (current_date + 1) + time '10:00', (current_date + 1) + time '10:30', null, 'Primera toma de contacto', 'd1111111-1111-4111-8111-111111111111', null, null, (select id from empleados where nombre = 'Laura')),
+  ('Reunión con Nuria: tienda de ropa infantil', 'reunion', (current_date + 2) + time '16:00', (current_date + 2) + time '17:00', 'https://meet.google.com/', 'Revisar catálogo y envíos', 'd3333333-3333-4333-8333-333333333333', null, null, (select id from empleados where nombre = 'Laura')),
+  ('Seguimiento de la propuesta SEO', 'tarea', current_date + time '12:00', null, null, null, 'd4444444-4444-4444-8444-444444444444', '22222222-2222-4222-8222-222222222222', null, (select id from empleados where nombre = 'Laura')),
+  ('Revisión de la tienda con Café Origen', 'reunion', (current_date + 7) + time '11:00', (current_date + 7) + time '12:00', 'C/ Fuencarral 45, Madrid', null, null, '11111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', (select id from empleados where nombre = 'Marta'));
+
+update eventos set enlaces = '[{"nombre": "Web demo", "url": "https://demo.stellagroup.es/ropa-infantil"}]'
+where titulo = 'Reunión con Nuria: tienda de ropa infantil';
+
+update proyectos set ficha = '{"dominio": "cafeorigen.es", "plataforma": "Shopify", "hosting": "Shopify", "productos": "42", "pagos": "Redsys y Bizum", "envios": "MRW con seguimiento", "contacto": "Lucía Prieto"}'
+where id = 'a1111111-1111-4111-8111-111111111111';

@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { estadoFactura, FormularioFactura } from './Facturas';
 import HorasSemanales from '../components/HorasSemanales';
+import FichaProyecto from '../components/FichaProyecto';
 import Hitos from '../components/Hitos';
 
 /** Horas que salen de una base a un precio por hora: «669 h» */
@@ -268,6 +269,8 @@ function DetalleProyecto({ id }: { id: string }) {
             <p className="text-xl font-bold mt-1">{euros(cobrado)}</p>
           </div>
         </div>
+
+        <FichaProyecto proyecto={o} />
 
         {!porHoras && <Hitos proyecto={o} />}
 
