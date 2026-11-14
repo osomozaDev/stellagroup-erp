@@ -225,6 +225,7 @@ export class PresupuestosController {
       iva_pct: Number(p.iva_pct),
       retencion_pct: Number(p.retencion_pct),
       forma_pago: p.forma_pago,
+      forma_pago_texto: p.forma_pago_texto,
       condiciones: p.condiciones,
       notas: p.notas,
       lineas: p.lineas.map((l: any) => ({ concepto: l.concepto, cantidad: Number(l.cantidad), unidad: l.unidad, precio: Number(l.precio) })),

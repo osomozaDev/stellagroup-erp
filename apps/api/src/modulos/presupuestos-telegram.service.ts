@@ -162,7 +162,7 @@ export class PresupuestosTelegramService {
     const e = ok(await this.db.from('empresa').select('iva_pct').eq('id', 1).single()) as any;
     const p = await this.presupuestos.crear({
       cliente_id: clienteId, cliente_texto: null, titulo: TITULO_PROVISIONAL, introduccion: null, fecha: hoyMadrid(), valido_hasta: null,
-      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, forma_pago: 'unico', condiciones: null, notas: null, lineas: [], ...deOportunidad,
+      iva_pct: Number(e.iva_pct ?? 0), retencion_pct: 0, forma_pago: 'unico', forma_pago_texto: null, condiciones: null, notas: null, lineas: [], ...deOportunidad,
     });
     const { texto, botones } = await this.tarjeta(p.id);
     return this.telegram.enviar(chatId, texto, botones);
@@ -217,7 +217,7 @@ export class PresupuestosTelegramService {
     const titulo = automatico ? (principal ? nombreDe(principal.concepto) : TITULO_PROVISIONAL) : p.titulo;
     await this.presupuestos.editar(id, {
       cliente_id: p.cliente_id, cliente_texto: p.cliente_texto, titulo, introduccion: p.introduccion, fecha: p.fecha, valido_hasta: p.valido_hasta,
-      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), forma_pago: formaPago ?? p.forma_pago, condiciones: p.condiciones, notas: p.notas, lineas,
+      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), forma_pago: formaPago ?? p.forma_pago, forma_pago_texto: p.forma_pago_texto, condiciones: p.condiciones, notas: p.notas, lineas,
     });
   }
 
@@ -237,7 +237,8 @@ export class PresupuestosTelegramService {
   private async preguntarPago(id: string, puede: Puede) {
     const p = await this.cargar(id);
     if (!this.hayPagoUnico(p)) return this.preguntarCuotas(id, puede);
-    const botones: Botones = (Object.entries(FORMAS_PAGO) as [FormaPago, (typeof FORMAS_PAGO)[FormaPago]][]).map(([clave, f]) => [
+    // La personalizada necesita escribir el plan de pagos: esa se elige en la app
+    const botones: Botones = (Object.entries(FORMAS_PAGO) as [FormaPago, (typeof FORMAS_PAGO)[FormaPago]][]).filter(([clave]) => clave !== 'personalizada' || p.forma_pago === clave).map(([clave, f]) => [
       { text: `${p.forma_pago === clave ? '✓ ' : ''}${f.nombre}`, callback_data: `pf:${id}:${clave}` },
     ]);
     return { texto: [this.resumen(p), '', '💶 ¿Cómo paga lo que es de pago único?'].join('\n'), botones, p };
@@ -411,7 +412,7 @@ export class PresupuestosTelegramService {
 
       case 'pf': {
         if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
-        if (!extra || !(extra in FORMAS_PAGO)) return responder();
+        if (!extra || !(extra in FORMAS_PAGO) || extra === 'personalizada') return responder();
         await this.cambiarPartidas(id, (ls) => ls, extra as FormaPago);
         await responder(`💶 ${FORMAS_PAGO[extra as FormaPago].nombre}`);
         return editar(await this.preguntarCuotas(id, puede));

@@ -312,6 +312,7 @@ function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto
     iva_pct: presupuesto?.iva_pct ?? 0,
     retencion_pct: presupuesto?.retencion_pct ?? 0,
     forma_pago: presupuesto?.forma_pago ?? 'unico',
+    forma_pago_texto: presupuesto?.forma_pago_texto ?? '',
     condiciones: presupuesto?.condiciones ?? '',
     notas: presupuesto?.notas ?? '',
   }));
@@ -447,6 +448,16 @@ function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto
             {Object.entries(FORMAS_PAGO).map(([clave, f]) => <option key={clave} value={clave}>{f.nombre}: {f.condicion}</option>)}
           </Selector>
         </Campo>
+        {v.forma_pago === 'personalizada' && (
+          <Campo etiqueta="Plan de pagos" ayuda="Una línea por pago. Sale tal cual en el presupuesto y en el contrato.">
+            <AreaTexto
+              rows={3}
+              value={v.forma_pago_texto}
+              onChange={(e) => poner('forma_pago_texto', e.target.value)}
+              placeholder={'25 % el 1 de diciembre\n25 % el 15 de diciembre\n50 % a la entrega, antes de publicar la web'}
+            />
+          </Campo>
+        )}
         <Campo etiqueta="Condiciones" ayuda="Si lo dejas vacío, salen las de «Mi empresa»">
           <AreaTexto rows={3} value={v.condiciones} onChange={(e) => poner('condiciones', e.target.value)} placeholder={empresa?.condiciones_presupuesto ?? ''} />
         </Campo>

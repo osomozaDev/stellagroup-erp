@@ -1,4 +1,4 @@
-import { etiquetaNif, FORMAS_PAGO } from '@stella/shared';
+import { condicionPago, etiquetaNif } from '@stella/shared';
 import { aclarar, euros, fecha, nombreMes, num } from '../lib/formato';
 
 /** Vista en pantalla de la factura o el presupuesto. Imita el PDF (@stella/pdf): si cambias uno, cambia el otro. */
@@ -99,7 +99,7 @@ export default function FacturaDocumento({ f }: { f: any }) {
           <footer className="mt-8 pt-4 border-t border-slate-100 space-y-4">
             <div>
               <p className="text-xs text-slate-500">Condiciones</p>
-              <p>Forma de pago: {(FORMAS_PAGO[f.forma_pago as keyof typeof FORMAS_PAGO] ?? FORMAS_PAGO.dos).condicion}.</p>
+              <p>Forma de pago: {condicionPago(f)}.</p>
               {e.iban && <p>Pago por transferencia: <span className="font-semibold tracking-wide">{e.iban}</span> (titular: {e.nombre}).</p>}
               <p className="whitespace-pre-line">
                 {String(f.condiciones || e.condiciones_presupuesto || (Number(f.iva_pct) > 0 ? 'Precios sin IVA salvo que se indique.' : ''))

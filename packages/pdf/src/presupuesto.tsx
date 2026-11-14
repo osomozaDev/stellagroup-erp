@@ -1,5 +1,5 @@
 import { Document, Image, Page, Path, StyleSheet, Svg, Text, View } from '@react-pdf/renderer';
-import { etiquetaNif, FORMAS_PAGO } from '@stella/shared';
+import { condicionPago, etiquetaNif } from '@stella/shared';
 import { fecha } from './formato';
 
 /**
@@ -97,9 +97,8 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
   const contacto = [e.telefono, e.email].filter(Boolean).join(' · ');
   const direccionCliente = c.lineas ? c.direccion : [c.direccion, [c.cp, c.ciudad].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   // La forma de pago es la del presupuesto: la de las condiciones de siempre, si la hubiera, no se repite
-  const formaPago = FORMAS_PAGO[p.forma_pago as keyof typeof FORMAS_PAGO] ?? FORMAS_PAGO.dos;
   const condiciones = [
-    `Forma de pago: ${formaPago.condicion}.`,
+    `Forma de pago: ${condicionPago(p)}.`,
     ...(e.iban ? [`Pago por transferencia: ${e.iban} (titular: ${e.nombre}).`] : []),
     ...String(p.condiciones || e.condiciones_presupuesto || (iva > 0 ? 'Precios sin IVA.' : '')).split('\n').map((x) => x.trim().replace(/^[-•]\s*/, '')).filter((x) => x && !/^forma de pago/i.test(x)),
   ];
