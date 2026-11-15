@@ -297,7 +297,13 @@ export const presupuestoSchema = z.object({
   iva_pct: numero.min(0).max(100),
   retencion_pct: numero.min(0).max(100).default(0),
   forma_pago: z.enum(['unico', 'dos', 'tres', 'convenir', 'personalizada']).default('unico'),
-  // Plan de pagos de la forma personalizada: una línea por pago
+  // Plan de pagos «a convenir»: fecha y cantidad de cada pago (las filas vacías se quitan)
+  forma_pago_plan: z
+    .array(z.object({ fecha: fecha, importe: z.coerce.number().min(0).nullable().optional(), concepto: texto }))
+    .max(12, 'Como mucho 12 pagos')
+    .default([])
+    .transform((ps) => ps.filter((x) => x.fecha || Number(x.importe) > 0 || x.concepto)),
+  // Plan escrito a mano de los presupuestos antiguos con forma «personalizada»: una línea por pago
   forma_pago_texto: texto,
   condiciones: texto,
   notas: texto,
@@ -307,9 +313,13 @@ export const presupuestoSchema = z.object({
   lineas: z.array(lineaSchema).min(1, 'Añade al menos una línea'),
 })
   .refine((p) => p.cliente_id || p.cliente_texto, { message: 'Elige un cliente o escribe sus datos' })
-  .refine((p) => p.forma_pago !== 'personalizada' || plazosPersonalizados(p.forma_pago_texto).length, {
+  .refine((p) => p.forma_pago !== 'personalizada' || planDePagos(p).length, {
     message: 'Escribe el plan de pagos: una línea por pago',
     path: ['forma_pago_texto'],
+  })
+  .refine((p) => p.forma_pago_plan.every((x) => x.fecha && Number(x.importe) > 0), {
+    message: 'Pon la fecha y la cantidad de cada pago',
+    path: ['forma_pago_plan'],
   });
 export type PresupuestoInput = z.infer<typeof presupuestoSchema>;
 
@@ -321,7 +331,7 @@ export const FORMAS_PAGO = {
   unico: { nombre: 'Pago único', condicion: 'un solo pago del 100 % al aceptar el presupuesto' },
   dos: { nombre: '50 % y 50 %', condicion: '50 % al aceptar el presupuesto y 50 % a la entrega, antes de publicar la web' },
   tres: { nombre: '3 pagos', condicion: 'tres pagos iguales: al aceptar el presupuesto, al aprobar el diseño y a la entrega, antes de publicar la web' },
-  convenir: { nombre: 'A convenir', condicion: 'a convenir entre las partes' },
+  convenir: { nombre: 'A convenir', condicion: 'en las fechas y cantidades acordadas entre las partes' },
   personalizada: { nombre: 'Personalizada', condicion: 'según el plan de pagos acordado' },
 } as const;
 export type FormaPago = keyof typeof FORMAS_PAGO;
@@ -331,17 +341,38 @@ export function plazosPersonalizados(texto?: string | null) {
   return (texto ?? '').split('\n').map((l) => l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
 }
 
-/** La forma de pago de un presupuesto en una frase («50 % al aceptar…», o el plan personalizado) */
-export function condicionPago(p: { forma_pago?: string | null; forma_pago_texto?: string | null }) {
-  const plan = plazosPersonalizados(p.forma_pago_texto);
-  if (p.forma_pago === 'personalizada' && plan.length) return plan.join('; ');
+export interface PagoAcordado {
+  fecha?: string | null;
+  importe?: number | string | null;
+  concepto?: string | null;
+}
+type ConPlan = { forma_pago?: string | null; forma_pago_texto?: string | null; forma_pago_plan?: PagoAcordado[] | null };
+
+/**
+ * Los pagos acordados de un presupuesto «a convenir» (o «personalizada»), uno por elemento:
+ * «300,00 € el 1 de diciembre de 2026 (reserva)», en orden de fecha. Sin plan, el texto escrito a mano.
+ */
+export function planDePagos(p: ConPlan) {
+  if (p.forma_pago !== 'convenir' && p.forma_pago !== 'personalizada') return [];
+  const plan = (p.forma_pago_plan ?? [])
+    .filter((x) => x.fecha || Number(x.importe) > 0)
+    .sort((a, b) => (a.fecha ?? '9999').localeCompare(b.fecha ?? '9999'))
+    .map((x) => [Number(x.importe) > 0 && eurosEs(x.importe), x.fecha && `el ${fechaLargaEs(x.fecha)}`].filter(Boolean).join(' ') + (x.concepto?.trim() ? ` (${x.concepto.trim()})` : ''));
+  return plan.length ? plan : plazosPersonalizados(p.forma_pago_texto);
+}
+
+/** La forma de pago de un presupuesto en una frase («50 % al aceptar…», o los pagos acordados) */
+export function condicionPago(p: ConPlan) {
+  const plan = planDePagos(p);
+  if (plan.length) return plan.join('; ');
   return (FORMAS_PAGO[p.forma_pago as FormaPago] ?? FORMAS_PAGO.dos).condicion;
 }
 
 /** Los plazos de la forma de pago, como lista del contrato */
-function plazosContrato(forma: FormaPago, texto?: string | null) {
-  const plan = plazosPersonalizados(texto);
-  if (forma === 'personalizada' && plan.length) return plan.map((l) => `- ${l}`).join('\n');
+function plazosContrato(p: ConPlan) {
+  const forma = (p.forma_pago as FormaPago) in FORMAS_PAGO ? (p.forma_pago as FormaPago) : 'dos';
+  const plan = planDePagos(p);
+  if (plan.length) return plan.map((l) => `- ${l}`).join('\n');
   if (forma === 'convenir' || forma === 'personalizada')
     return '- La forma y las fechas de pago se acordarán entre las partes por escrito antes de iniciar los trabajos.';
   if (forma === 'unico') return '- **100 %** a la firma de este contrato, como condición para iniciar los trabajos.';
@@ -628,7 +659,7 @@ export function rellenarPlantilla(
     'cliente.telefono': d.cliente?.telefono ?? '',
     'presupuesto.fecha': fechaLargaEs(d.presupuesto?.fecha),
     'presupuesto.plazos': d.presupuesto
-      ? plazosContrato((d.presupuesto.forma_pago as FormaPago) in FORMAS_PAGO ? d.presupuesto.forma_pago : 'dos', d.presupuesto.forma_pago_texto)
+      ? plazosContrato(d.presupuesto)
       : '',
     'presupuesto.partidas': partidasPresupuesto(d.presupuesto?.lineas, Number(d.presupuesto?.iva_pct ?? 0)),
   };

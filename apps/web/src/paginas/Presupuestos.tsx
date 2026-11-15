@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
@@ -322,6 +322,13 @@ function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto
     ],
   );
   const poner = (k: keyof typeof v, valor: any) => setV((x) => ({ ...x, [k]: valor }));
+  // Pagos «a convenir»: fecha y cantidad de cada uno. Empieza con tres filas vacías
+  const [pagos, setPagos] = useState<Pago[]>(() => {
+    const guardados = (presupuesto?.forma_pago_plan ?? []).map((x: any) => ({ fecha: x.fecha ?? '', importe: x.importe ?? '', concepto: x.concepto ?? '' }));
+    return guardados.length ? guardados : [pagoVacio(), pagoVacio(), pagoVacio()];
+  });
+  const cambiarPago = (i: number, k: keyof Pago, valor: string) => setPagos((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: valor } : x)));
+  const conPlan = v.forma_pago === 'convenir' || v.forma_pago === 'personalizada';
   useIvaHabitual(!presupuesto, (iva) => poner('iva_pct', iva));
   // Un cliente de la lista o, si aún no lo es, sus datos escritos a mano
   const [aMano, setAMano] = useState<'lista' | 'texto'>((presupuesto && !presupuesto.cliente_id) || inicial?.cliente_texto ? 'texto' : 'lista');
@@ -337,6 +344,9 @@ function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto
         cliente_texto: aMano === 'texto' ? v.cliente_texto : null,
         valido_hasta: v.valido_hasta || null,
         oportunidad_id: presupuesto ? undefined : inicial?.oportunidad_id || null,
+        forma_pago_plan: conPlan
+          ? pagos.map((x) => ({ fecha: x.fecha || null, importe: x.importe === '' ? null : Number(x.importe), concepto: x.concepto || null }))
+          : [],
         lineas,
       };
       return presupuesto ? api<any>(`/presupuestos/${presupuesto.id}`, { method: 'PATCH', body }) : api<any>('/presupuestos', { method: 'POST', body });
@@ -443,19 +453,18 @@ function FormularioPresupuesto({ presupuesto, inicial, onCerrar }: { presupuesto
           <Campo etiqueta="IVA %"><Entrada type="number" inputMode="decimal" value={v.iva_pct} onChange={(e) => poner('iva_pct', e.target.value)} /></Campo>
           <Campo etiqueta="Retención IRPF %" ayuda="Solo si el cliente te retiene IRPF"><Entrada type="number" inputMode="decimal" value={v.retencion_pct} onChange={(e) => poner('retencion_pct', e.target.value)} /></Campo>
         </div>
-        <Campo etiqueta="Forma de pago" ayuda="De lo que es de pago único. Las cuotas se pagan por meses o por años según la unidad de cada partida.">
+        <Campo etiqueta="Forma de pago" ayuda="De lo que es de pago único (la web, el logo…). Las cuotas de mantenimiento, dominio o QR van aparte, al mes o al año.">
           <Selector value={v.forma_pago} onChange={(e) => poner('forma_pago', e.target.value)}>
-            {Object.entries(FORMAS_PAGO).map(([clave, f]) => <option key={clave} value={clave}>{f.nombre}: {f.condicion}</option>)}
+            {Object.entries(FORMAS_PAGO)
+              // «Personalizada» queda solo para los presupuestos antiguos que la tienen: ahora es «A convenir»
+              .filter(([clave]) => clave !== 'personalizada' || v.forma_pago === clave)
+              .map(([clave, f]) => <option key={clave} value={clave}>{clave === 'convenir' ? 'A convenir: tú eliges las fechas y las cantidades' : `${f.nombre}: ${f.condicion}`}</option>)}
           </Selector>
         </Campo>
-        {v.forma_pago === 'personalizada' && (
-          <Campo etiqueta="Plan de pagos" ayuda="Una línea por pago. Sale tal cual en el presupuesto y en el contrato.">
-            <AreaTexto
-              rows={3}
-              value={v.forma_pago_texto}
-              onChange={(e) => poner('forma_pago_texto', e.target.value)}
-              placeholder={'25 % el 1 de diciembre\n25 % el 15 de diciembre\n50 % a la entrega, antes de publicar la web'}
-            />
+        {conPlan && <PlanDePagos pagos={pagos} setPagos={setPagos} cambiar={cambiarPago} total={t.total} />}
+        {v.forma_pago === 'personalizada' && v.forma_pago_texto && (
+          <Campo etiqueta="Plan escrito a mano" ayuda="Solo sale si no hay pagos con fecha y cantidad arriba">
+            <AreaTexto rows={3} value={v.forma_pago_texto} onChange={(e) => poner('forma_pago_texto', e.target.value)} />
           </Campo>
         )}
         <Campo etiqueta="Condiciones" ayuda="Si lo dejas vacío, salen las de «Mi empresa»">
@@ -547,5 +556,43 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
         </div>
       </div>
     </Tarjeta>
+  );
+}
+
+type Pago = { fecha: string; importe: string | number; concepto: string };
+const pagoVacio = (): Pago => ({ fecha: '', importe: '', concepto: '' });
+
+/** Los pagos «a convenir»: fecha, cantidad y, si se quiere, a qué corresponde. Avisa si no suman el total */
+function PlanDePagos({ pagos, setPagos, cambiar, total }: {
+  pagos: Pago[];
+  setPagos: Dispatch<SetStateAction<Pago[]>>;
+  cambiar: (i: number, k: keyof Pago, valor: string) => void;
+  total: number;
+}) {
+  const suma = Math.round(pagos.reduce((s, x) => s + (Number(x.importe) || 0), 0) * 100) / 100;
+  const diferencia = Math.round((total - suma) * 100) / 100;
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+      <p className="text-sm font-medium text-slate-700">Pagos</p>
+      {pagos.map((x, i) => (
+        <div key={i} className="grid grid-cols-[1fr_1fr_auto] sm:grid-cols-[9rem_8rem_1fr_auto] gap-2 items-end">
+          <Campo etiqueta={`Pago ${i + 1}: fecha`}><Entrada type="date" value={x.fecha} onChange={(e) => cambiar(i, 'fecha', e.target.value)} /></Campo>
+          <Campo etiqueta="Cantidad €"><Entrada type="number" inputMode="decimal" step="0.01" min={0} value={x.importe} onChange={(e) => cambiar(i, 'importe', e.target.value)} /></Campo>
+          <div className="col-span-2 sm:col-span-1 row-start-2 sm:row-start-auto">
+            <Campo etiqueta="Concepto (opcional)"><Entrada value={x.concepto} onChange={(e) => cambiar(i, 'concepto', e.target.value)} placeholder="Reserva, a la entrega…" /></Campo>
+          </div>
+          <button type="button" className="mb-2 p-2 text-slate-400 hover:text-red-600 col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto" aria-label="Quitar este pago" onClick={() => setPagos((ps) => ps.filter((_, j) => j !== i))}>
+            <Trash2 className="size-4" />
+          </button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Boton variante="fantasma" icono={<Plus className="size-4" />} onClick={() => setPagos((ps) => [...ps, pagoVacio()])}>Añadir pago</Boton>
+        <p className={`text-sm ${suma && diferencia ? 'text-amber-700' : 'text-slate-500'}`}>
+          Suman {euros(suma)}
+          {suma > 0 && diferencia !== 0 && ` · ${diferencia > 0 ? 'faltan' : 'sobran'} ${euros(Math.abs(diferencia))} para el total`}
+        </p>
+      </div>
+    </div>
   );
 }
