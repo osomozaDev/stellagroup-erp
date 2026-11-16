@@ -361,6 +361,30 @@ export function planDePagos(p: ConPlan) {
   return plan.length ? plan : plazosPersonalizados(p.forma_pago_texto);
 }
 
+/** Fecha del primer pago acordado (el más temprano), si el presupuesto es «a convenir» con fechas */
+export function primerPago(p: ConPlan) {
+  if (p.forma_pago !== 'convenir' && p.forma_pago !== 'personalizada') return null;
+  const fechas = (p.forma_pago_plan ?? []).map((x) => x.fecha).filter((f): f is string => !!f).sort();
+  return fechas[0] ?? null;
+}
+
+/**
+ * Pone en el contrato la fecha prevista del primer pago y la de entrega, que se cuenta desde él:
+ * tras «N días naturales|hábiles, contados desde la recepción del primer pago» añade
+ * «(previsto para el …; entrega prevista el …)». Los días hábiles saltan sábados y domingos.
+ */
+export function fechaEntregaEnContrato(cuerpo: string, pago: string | null) {
+  if (!pago) return cuerpo;
+  return cuerpo.replace(/(\d+)\s+días\s+(naturales|hábiles),\s+contados desde la recepción del primer pago(?!\s*\(previsto)/, (todo, n: string, tipo: string) => {
+    const d = new Date(`${pago}T12:00:00Z`);
+    for (let quedan = Number(n); quedan > 0; ) {
+      d.setUTCDate(d.getUTCDate() + 1);
+      if (tipo === 'naturales' || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) quedan--;
+    }
+    return `${todo} (previsto para el ${fechaLargaEs(pago)}; entrega prevista el ${fechaLargaEs(d.toISOString())})`;
+  });
+}
+
 /** La forma de pago de un presupuesto en una frase («50 % al aceptar…», o los pagos acordados) */
 export function condicionPago(p: ConPlan) {
   const plan = planDePagos(p);

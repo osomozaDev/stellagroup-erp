@@ -3,7 +3,7 @@ import { Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, clienteDeTexto, EnviarFirmaInput, enviarFirmaSchema, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput,
-  presupuestoSchema, redondear,
+  fechaEntregaEnContrato, presupuestoSchema, primerPago, redondear,
 } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
@@ -176,6 +176,9 @@ export class PresupuestosController {
     const t = await textoDeContrato(this.db, { plantillaId, clienteId: cliente.id, presupuestoId: id, proyectoId: p.proyecto_id, fecha: hoy() });
     let cuerpo = t.cuerpo;
     cuerpo = cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(body.plazo_dias || PLAZO_HABITUAL));
+    // «A convenir» con fechas: el plazo se cuenta desde el primer pago, así que se pone la fecha de entrega
+    const pago = ok(await this.db.from('presupuestos').select('forma_pago, forma_pago_plan').eq('id', id).single()) as any;
+    cuerpo = fechaEntregaEnContrato(cuerpo, primerPago(pago));
     if (body.precio_hora != null) cuerpo = cuerpo.replace(/\[falta precio por hora[^\]]*\]/g, new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(body.precio_hora));
 
     const fecha = hoy();
