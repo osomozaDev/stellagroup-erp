@@ -361,21 +361,38 @@ export function planDePagos(p: ConPlan) {
   return plan.length ? plan : plazosPersonalizados(p.forma_pago_texto);
 }
 
-/** Fecha del primer pago acordado (el más temprano), si el presupuesto es «a convenir» con fechas */
-export function primerPago(p: ConPlan) {
-  if (p.forma_pago !== 'convenir' && p.forma_pago !== 'personalizada') return null;
-  const fechas = (p.forma_pago_plan ?? []).map((x) => x.fecha).filter((f): f is string => !!f).sort();
-  return fechas[0] ?? null;
+/** Lo que no es cuota (la web, el logo…), con IVA y retención: el «precio cerrado» del presupuesto */
+export function precioCerrado(p: { lineas?: { unidad?: string | null; importe?: number | string | null }[] | null; iva_pct?: number | string | null; retencion_pct?: number | string | null }) {
+  const base = (p.lineas ?? []).filter((l) => l.unidad !== 'mes' && l.unidad !== 'año').reduce((t, l) => t + Number(l.importe ?? 0), 0);
+  return Math.round(base * (100 + Number(p.iva_pct ?? 0) - Number(p.retencion_pct ?? 0))) / 100;
 }
 
 /**
- * Pone en el contrato la fecha prevista del primer pago y la de entrega, que se cuenta desde él:
- * tras «N días naturales|hábiles, contados desde la recepción del primer pago» añade
- * «(previsto para el …; entrega prevista el …)». Los días hábiles saltan sábados y domingos.
+ * Fecha en la que, según los pagos acordados, el Cliente habrá abonado al menos la mitad del
+ * precio cerrado: desde ella se cuenta el plazo de entrega. Sin pagos con fecha, null.
+ */
+export function fechaMitadPagada(p: ConPlan, precio: number) {
+  if (p.forma_pago !== 'convenir' && p.forma_pago !== 'personalizada') return null;
+  const pagos = (p.forma_pago_plan ?? []).filter((x) => x.fecha && Number(x.importe) > 0).sort((a, b) => a.fecha!.localeCompare(b.fecha!));
+  let pagado = 0;
+  for (const x of pagos) {
+    pagado += Number(x.importe);
+    if (pagado + 0.005 >= precio / 2) return x.fecha!;
+  }
+  return null;
+}
+
+/** Desde cuándo cuenta el plazo de entrega en las plantillas (la frase antigua y la de ahora) */
+const DESDE_PAGO = /(\d+)\s+días\s+(naturales|hábiles),\s+contados desde (?:la recepción del primer pago|que el Cliente haya abonado al menos el 50 % del precio cerrado)(?!\s*\(previsto)/;
+
+/**
+ * Pone en el contrato cuándo está previsto tener pagado el 50 % y la fecha de entrega que resulta:
+ * tras «N días naturales|hábiles, contados desde …» añade «(previsto para el …; entrega prevista el …)».
+ * Los días hábiles saltan sábados y domingos.
  */
 export function fechaEntregaEnContrato(cuerpo: string, pago: string | null) {
   if (!pago) return cuerpo;
-  return cuerpo.replace(/(\d+)\s+días\s+(naturales|hábiles),\s+contados desde la recepción del primer pago(?!\s*\(previsto)/, (todo, n: string, tipo: string) => {
+  return cuerpo.replace(DESDE_PAGO, (todo, n: string, tipo: string) => {
     const d = new Date(`${pago}T12:00:00Z`);
     for (let quedan = Number(n); quedan > 0; ) {
       d.setUTCDate(d.getUTCDate() + 1);
@@ -613,15 +630,15 @@ export const VARIABLES_CONTRATO = [
   ['fecha.larga', 'Fecha del contrato'], ['fecha.ciudad', 'Ciudad donde se firma'],
   ['empresa.email', 'Tu correo'], ['empresa.telefono', 'Tu teléfono'], ['empresa.iban', 'Tu IBAN (si no lo hay: «que figure en cada factura»)'],
   ['cliente.email', 'Correo del cliente'], ['cliente.telefono', 'Teléfono del cliente'],
-  ['presupuesto.fecha', 'Fecha del presupuesto'], ['presupuesto.partidas', 'Partidas del presupuesto (pago único, anual y mensual)'],
+  ['presupuesto.fecha', 'Fecha del presupuesto'], ['presupuesto.partidas', 'Partidas del presupuesto (precio cerrado, anual y mensual)'],
   ['presupuesto.plazos', 'Plazos de la forma de pago del presupuesto (100 %, 50 y 50 o tres pagos)'],
 ] as const;
 
-/** Partidas de un presupuesto agrupadas como en su PDF: pago único, pago anual (unidad «año») y cuota mensual (unidad «mes»). Sin IVA, sin «+ IVA» */
+/** Partidas de un presupuesto agrupadas como en su PDF: precio cerrado, pago anual (unidad «año») y cuota mensual (unidad «mes»). Sin IVA, sin «+ IVA» */
 function partidasPresupuesto(lineas: any[] | undefined, ivaPct: number) {
   if (!lineas?.length) return '';
   const grupos = [
-    { titulo: 'Pago único', sufijo: '', es: (u: string) => u !== 'mes' && u !== 'año' },
+    { titulo: 'Precio cerrado', sufijo: '', es: (u: string) => u !== 'mes' && u !== 'año' },
     { titulo: 'Pago anual', sufijo: ' al año', es: (u: string) => u === 'año' },
     { titulo: 'Cuota mensual', sufijo: ' al mes', es: (u: string) => u === 'mes' },
   ];

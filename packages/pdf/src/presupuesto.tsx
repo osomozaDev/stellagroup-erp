@@ -4,7 +4,7 @@ import { fecha } from './formato';
 
 /**
  * PDF del presupuesto con el diseño de Stella Group: fondo crema, dorado, títulos con
- * serifa (Fraunces) y las partidas agrupadas en pago único, pago anual y cuota mensual,
+ * serifa (Fraunces) y las partidas agrupadas en precio cerrado, pago anual y cuota mensual,
  * cada grupo con sus totales. Lo usa la API (descarga, firma y copias firmadas).
  */
 
@@ -44,7 +44,7 @@ export const DEGRADADO = Array.from({ length: 64 }, (_, i) => {
 });
 
 const GRUPOS = [
-  { clave: 'unico', titulo: 'Pago único', sufijo: '' },
+  { clave: 'unico', titulo: 'Precio cerrado', sufijo: '' },
   { clave: 'anual', titulo: 'Pago anual', sufijo: '/año' },
   { clave: 'mensual', titulo: 'Cuota mensual', sufijo: '/mes' },
 ] as const;
@@ -94,6 +94,9 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
   const base = (clave: string) => lineas.filter((l) => grupoDe(l.unidad) === clave).reduce((t, l) => t + Number(l.importe), 0);
   const conIva = (n: number) => Math.round(n * (1 + iva / 100) * 100) / 100;
   const hayCuotas = grupos.some((g) => g.clave !== 'unico');
+  // Con pagos acordados, el total a repartir lleva el primer año y el primer mes de las cuotas
+  const conPlan = (p.forma_pago === 'convenir' || p.forma_pago === 'personalizada') && hayCuotas;
+  const conImpuestos = (n: number) => Math.round(n * (100 + iva - ret)) / 100;
   const contacto = [e.telefono, e.email].filter(Boolean).join(' · ');
   const direccionCliente = c.lineas ? c.direccion : [c.direccion, [c.cp, c.ciudad].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   // La forma de pago es la del presupuesto: la de las condiciones de siempre, si la hubiera, no se repite
@@ -203,17 +206,26 @@ export function PresupuestoPdf({ p, Certificado }: { p: any; Certificado?: (prop
             {p.notas && <Condicion texto={p.notas} />}
           </View>
           <View style={[s.tarjeta, { flex: 1, paddingVertical: 11, paddingHorizontal: 14 }]}>
-            {hayCuotas && <Text style={[s.etiqueta, { color: oro, marginBottom: 4 }]}>Pago único</Text>}
+            {hayCuotas && <Text style={[s.etiqueta, { color: oro, marginBottom: 4 }]}>{conPlan ? 'Pagos acordados' : 'Precio cerrado'}</Text>}
             {/* Sin IVA ni retención, solo el total */}
             {(iva > 0 || ret > 0) && <FilaTotal t="Base imponible" v={precio(base('unico'))} />}
             {iva > 0 && <FilaTotal t={`IVA ${cantidad(iva)} %`} v={precio(Math.round(base('unico') * iva) / 100)} />}
             {ret > 0 && <FilaTotal t={`Retención IRPF ${cantidad(ret)} %`} v={`– ${precio(Math.round(base('unico') * ret) / 100)}`} />}
-            <FilaTotal t="Total" v={precio(Math.round(base('unico') * (100 + iva - ret)) / 100)} grande />
+            {conPlan ? (
+              <>
+                <FilaTotal t="Precio cerrado" v={precio(conImpuestos(base('unico')))} />
+                {base('anual') > 0 && <FilaTotal t="Primer año de pago anual" v={precio(conImpuestos(base('anual')))} />}
+                {base('mensual') > 0 && <FilaTotal t="Primer mes de cuota" v={precio(conImpuestos(base('mensual')))} />}
+                <FilaTotal t="Total" v={precio(conImpuestos(base('unico') + base('anual') + base('mensual')))} grande />
+              </>
+            ) : (
+              <FilaTotal t="Total" v={precio(Math.round(base('unico') * (100 + iva - ret)) / 100)} grande />
+            )}
             {hayCuotas && (
               <>
-                <Text style={[s.etiqueta, { color: oro, marginTop: 12, marginBottom: 4 }]}>Cuotas</Text>
-                {base('anual') > 0 && <FilaTotal t={iva > 0 ? 'Anual + IVA' : 'Anual'} v={`${precio(conIva(base('anual')))}/año`} />}
-                {base('mensual') > 0 && <FilaTotal t={iva > 0 ? 'Mensual + IVA' : 'Mensual'} v={`${precio(conIva(base('mensual')))}/mes`} />}
+                <Text style={[s.etiqueta, { color: oro, marginTop: 12, marginBottom: 4 }]}>{conPlan ? 'Después, cuotas' : 'Cuotas'}</Text>
+                {base('anual') > 0 && <FilaTotal t={`${iva > 0 ? 'Anual + IVA' : 'Anual'}${conPlan ? ', desde el 2.º año' : ''}`} v={`${precio(conIva(base('anual')))}/año`} />}
+                {base('mensual') > 0 && <FilaTotal t={`${iva > 0 ? 'Mensual + IVA' : 'Mensual'}${conPlan ? ', desde el 2.º mes' : ''}`} v={`${precio(conIva(base('mensual')))}/mes`} />}
               </>
             )}
           </View>

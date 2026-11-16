@@ -574,6 +574,7 @@ function PlanDePagos({ pagos, setPagos, cambiar, total }: {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 p-3">
       <p className="text-sm font-medium text-slate-700">Pagos</p>
+      <p className="text-xs text-slate-500">El total ({euros(total)}) incluye el primer año de lo anual (dominio) y el primer mes de las cuotas (mantenimiento, QR…).</p>
       {pagos.map((x, i) => (
         <div key={i} className="grid grid-cols-[1fr_1fr_auto] sm:grid-cols-[9rem_8rem_1fr_auto] gap-2 items-end">
           <Campo etiqueta={`Pago ${i + 1}: fecha`}><Entrada type="date" value={x.fecha} onChange={(e) => cambiar(i, 'fecha', e.target.value)} /></Campo>

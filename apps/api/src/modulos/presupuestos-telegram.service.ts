@@ -294,7 +294,7 @@ export class PresupuestosTelegramService {
     const p = await this.cargar(id);
     return this.preguntar(
       chatId,
-      `${PREGUNTA_PAGOS} ${p.numero}: escribe un pago por línea con la cantidad y la fecha, y si quieres a qué corresponde. Total: ${euros(Number(p.total))}. Por ejemplo:\n300 15/11 reserva\n300 29/11\n600 6/12 a la entrega`,
+      `${PREGUNTA_PAGOS} ${p.numero}: escribe un pago por línea con la cantidad y la fecha, y si quieres a qué corresponde. Total: ${euros(Number(p.total))} (con el primer año de dominio y el primer mes de las cuotas). Por ejemplo:\n520 29/11 reserva\n560 20/12 a la entrega`,
       '300 15/11 reserva…',
     );
   }
