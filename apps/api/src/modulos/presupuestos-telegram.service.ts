@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { FORMAS_PAGO, FormaPago, lineaDeCatalogo, TIPOS_PROYECTO } from '@stella/shared';
+import { FORMAS_PAGO, FormaPago, lineaDeCatalogo, planDePagos, TIPOS_PROYECTO } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { busqueda, ok } from '../comun/db';
 import { fichaDeTexto } from '../comun/alta-cliente';
@@ -18,7 +18,8 @@ export const PREGUNTA_CLIENTE_PRESUPUESTO = '📝 ¿Para qué cliente es el pres
 export const PREGUNTA_PARTIDA = '✍️ Escribe la partida del presupuesto';
 export const PREGUNTA_CONTRATO = '📄 Para el contrato del presupuesto';
 export const PREGUNTA_DATO = '✏️ Falta en el contrato';
-export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO];
+export const PREGUNTA_PAGOS = '💶 Pagos a convenir del presupuesto';
+export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO, PREGUNTA_PAGOS];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
 const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
@@ -50,6 +51,39 @@ export function partidaDeTexto(texto: string) {
   if (!Number.isFinite(valor)) return null;
   const unidad = !m[3] ? 'ud' : /mes|mensual/i.test(m[3]) ? 'mes' : 'año';
   return { concepto: m[1].trim(), cantidad: 1, unidad, precio: valor };
+}
+
+/**
+ * Pagos «a convenir» escritos en el chat, uno por línea: la cantidad, la fecha y, si se quiere,
+ * a qué corresponde («300 15/11 reserva», «600€ el 6/12/2026 a la entrega»). Sin año, el más
+ * cercano a hoy. Si alguna línea no tiene cantidad o fecha, null.
+ */
+export function pagosDeTexto(texto: string, hoy: string) {
+  const lineas = texto.split('\n').map((l) => l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
+  if (!lineas.length || lineas.length > 12) return null;
+  const pagos = [];
+  for (const l of lineas) {
+    // Con «/» o «-» y sin cifras pegadas, para no confundirla con una cantidad como «1.200,50»
+    const f = l.match(/(?<![\d.,])(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?(?![\d.,])/);
+    if (!f) return null;
+    const resto = (l.slice(0, f.index) + ' ' + l.slice(f.index! + f[0].length)).replace(/\s+/g, ' ').trim();
+    const c = resto.match(/(\d[\d.,]*)\s*(?:€|euros?)?/i);
+    if (!c) return null;
+    const importe = precio(c[1]);
+    const dia = Number(f[1]), mes = Number(f[2]);
+    if (!(importe > 0) || dia < 1 || dia > 31 || mes < 1 || mes > 12) return null;
+    const dosCifras = (n: number) => String(n).padStart(2, '0');
+    // Sin año, el que deja la fecha más cerca de hoy (el 15/11 escrito el 16/11 es de este año; el 10/01, del próximo)
+    const año = Number(hoy.slice(0, 4));
+    const candidatos = f[3] ? [Number(f[3].length === 2 ? `20${f[3]}` : f[3])] : [año - 1, año, año + 1];
+    const distancia = (a: number) => Math.abs(Date.parse(`${a}-${dosCifras(mes)}-${dosCifras(dia)}T12:00:00Z`) - Date.parse(`${hoy}T12:00:00Z`));
+    const anio = candidatos.reduce((m, a) => (distancia(a) < distancia(m) ? a : m));
+    const fecha = `${anio}-${dosCifras(mes)}-${dosCifras(dia)}`;
+    if (new Date(`${fecha}T12:00:00Z`).getUTCDate() !== dia) return null;
+    const concepto = resto.replace(c[0], ' ').replace(/^\s*(el|en|y)\s+/i, '').replace(/\s+(el|en)\s*$/i, '').replace(/\s+/g, ' ').trim() || null;
+    pagos.push({ fecha, importe, concepto });
+  }
+  return pagos;
 }
 
 /**
@@ -105,6 +139,7 @@ export class PresupuestosTelegramService {
       if (!p) return this.telegram.enviar(chatId, 'No encuentro ese presupuesto. Empieza de nuevo desde /menu.');
       if (pregunta.startsWith(PREGUNTA_PARTIDA)) return await this.partidaEscrita(chatId, p.id, texto, puede);
       if (pregunta.startsWith(PREGUNTA_CONTRATO)) return await this.crearContrato(chatId, p.id, texto, puede);
+      if (pregunta.startsWith(PREGUNTA_PAGOS)) return await this.pagosEscritos(chatId, p.id, texto, puede);
     } catch (e: any) {
       return this.telegram.enviar(chatId, `⚠️ ${html(e.message ?? 'Algo ha fallado. Prueba desde la app.')}`);
     }
@@ -188,7 +223,7 @@ export class PresupuestosTelegramService {
       '',
       ...(lineas.length ? lineas : ['Aún no tiene partidas.']),
       // Sin IVA (mientras se contrata como particular), solo el total
-      ...(lineas.length && this.hayPagoUnico(p) ? ['', `💶 ${html(FORMAS_PAGO[p.forma_pago as FormaPago]?.nombre ?? '')}`] : []),
+      ...(lineas.length && this.hayPagoUnico(p) ? ['', `💶 ${html(FORMAS_PAGO[p.forma_pago as FormaPago]?.nombre ?? '')}`, ...planDePagos(p).map((x) => `   • ${html(x)}`)] : []),
       ...(lineas.length ? ['', ...(iva > 0 ? [`Base: ${euros(Number(p.base))} · IVA ${iva} %: ${euros(Number(p.iva_importe))}`] : []), `<b>Total: ${euros(Number(p.total))}</b>`] : []),
     ].join('\n');
   }
@@ -206,7 +241,7 @@ export class PresupuestosTelegramService {
   }
 
   /** Cambia las partidas y, si se pasa, la forma de pago (solo en borrador) con la misma lógica que la app */
-  private async cambiarPartidas(id: string, cambio: (lineas: any[]) => any[], formaPago?: FormaPago) {
+  private async cambiarPartidas(id: string, cambio: (lineas: any[]) => any[], formaPago?: FormaPago, plan?: any[]) {
     const p = await this.cargar(id);
     if (p.estado !== 'borrador') throw new BadRequestException('Este presupuesto ya se ha enviado: cámbialo desde la app.');
     const actuales = (p.lineas ?? []).map((l: any) => ({ concepto: l.concepto, cantidad: Number(l.cantidad), unidad: l.unidad, precio: Number(l.precio) }));
@@ -217,7 +252,7 @@ export class PresupuestosTelegramService {
     const titulo = automatico ? (principal ? nombreDe(principal.concepto) : TITULO_PROVISIONAL) : p.titulo;
     await this.presupuestos.editar(id, {
       cliente_id: p.cliente_id, cliente_texto: p.cliente_texto, titulo, introduccion: p.introduccion, fecha: p.fecha, valido_hasta: p.valido_hasta,
-      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), forma_pago: formaPago ?? p.forma_pago, forma_pago_texto: p.forma_pago_texto, forma_pago_plan: p.forma_pago_plan ?? [], condiciones: p.condiciones, notas: p.notas, lineas,
+      iva_pct: Number(p.iva_pct), retencion_pct: Number(p.retencion_pct), forma_pago: formaPago ?? p.forma_pago, forma_pago_texto: p.forma_pago_texto, forma_pago_plan: plan ?? p.forma_pago_plan ?? [], condiciones: p.condiciones, notas: p.notas, lineas,
     });
   }
 
@@ -253,6 +288,31 @@ export class PresupuestosTelegramService {
       botones: [[{ text: 'Cada mes', callback_data: `pm:${id}:mes` }, { text: 'Un pago al año', callback_data: `pm:${id}:año` }]] as Botones,
       p,
     };
+  }
+
+  private async pedirPagos(chatId: number, id: string) {
+    const p = await this.cargar(id);
+    return this.preguntar(
+      chatId,
+      `${PREGUNTA_PAGOS} ${p.numero}: escribe un pago por línea con la cantidad y la fecha, y si quieres a qué corresponde. Total: ${euros(Number(p.total))}. Por ejemplo:\n300 15/11 reserva\n300 29/11\n600 6/12 a la entrega`,
+      '300 15/11 reserva…',
+    );
+  }
+
+  private async pagosEscritos(chatId: number, id: string, texto: string, puede: Puede) {
+    if (!puede('PATCH', `/presupuestos/${id}`)) return this.telegram.enviar(chatId, 'No tienes permiso para cambiar presupuestos.');
+    const pagos = pagosDeTexto(texto, hoyMadrid());
+    if (!pagos) {
+      await this.telegram.enviar(chatId, 'No lo he entendido. Cada línea necesita la cantidad y la fecha, p. ej. «300 15/11».');
+      return this.pedirPagos(chatId, id);
+    }
+    await this.cambiarPartidas(id, (ls) => ls, 'convenir', pagos);
+    const p = await this.cargar(id);
+    const suma = Math.round(pagos.reduce((s, x) => s + x.importe, 0) * 100) / 100;
+    const diferencia = Math.round((Number(p.total) - suma) * 100) / 100;
+    const aviso = diferencia ? `⚠️ Suman ${euros(suma)}: ${diferencia > 0 ? 'faltan' : 'sobran'} ${euros(Math.abs(diferencia))} para el total.` : '✅ Suman el total.';
+    const r = await this.preguntarCuotas(id, puede);
+    return this.telegram.enviar(chatId, `${r.texto}\n\n${aviso}`, r.botones);
   }
 
   private async partidaEscrita(chatId: number, id: string, texto: string, puede: Puede) {
@@ -413,8 +473,10 @@ export class PresupuestosTelegramService {
       case 'pf': {
         if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
         if (!extra || !(extra in FORMAS_PAGO) || extra === 'personalizada') return responder();
-        await this.cambiarPartidas(id, (ls) => ls, extra as FormaPago);
+        await this.cambiarPartidas(id, (ls) => ls, extra as FormaPago, extra === 'convenir' ? undefined : []);
         await responder(`💶 ${FORMAS_PAGO[extra as FormaPago].nombre}`);
+        // A convenir: se escriben las fechas y cantidades de cada pago
+        if (extra === 'convenir') return this.pedirPagos(chatId, id);
         return editar(await this.preguntarCuotas(id, puede));
       }
 
