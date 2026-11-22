@@ -170,6 +170,7 @@ export class TelegramService implements OnModuleInit {
         { command: 'oportunidades', description: 'Embudo de ventas: ver y mover oportunidades' },
         { command: 'demos', description: 'Demos pendientes de hacer' },
         { command: 'presupuesto', description: 'Hacer un presupuesto y pasarlo a contrato' },
+        { command: 'presupuestos', description: 'Ver y editar los últimos presupuestos' },
         { command: 'nuevocliente', description: 'Dar de alta un cliente' },
         { command: 'facturar', description: 'Facturar el mes y mandarlo a los clientes' },
         { command: 'resumen', description: 'Lo que te deben y lo vencido' },

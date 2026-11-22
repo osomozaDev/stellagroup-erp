@@ -22,7 +22,7 @@ export const PREGUNTA_PAGOS = '💶 Pagos a convenir del presupuesto';
 export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO, PREGUNTA_PAGOS];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp']);
+const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp', 'pv', 'pz', 'PZ', 'pr', 'px']);
 
 const TITULO_PROVISIONAL = 'Presupuesto';
 const SUFIJO: Record<string, string> = { mes: '/mes', 'año': '/año' };
@@ -187,6 +187,21 @@ export class PresupuestosTelegramService {
 
   // ───────────────────────── Presupuestos ─────────────────────────
 
+  /** Los últimos presupuestos (o los de un cliente) para abrirlos y cambiarlos */
+  async listar(chatId: number, texto: string, puede: Puede) {
+    if (!puede('GET', '/presupuestos')) return this.telegram.enviar(chatId, 'No tienes permiso para ver presupuestos.');
+    let consulta = this.db.from('presupuestos').select('id, numero, estado, total, cliente:clientes!inner(nombre)').order('created_at', { ascending: false }).limit(10);
+    if (texto.trim()) consulta = consulta.ilike('cliente.nombre', `%${busqueda(texto.trim())}%`);
+    const lista = (ok(await consulta) ?? []) as any[];
+    if (!lista.length) return this.telegram.enviar(chatId, texto.trim() ? `No hay presupuestos de «${html(texto.trim())}».` : 'Aún no hay presupuestos.');
+    const icono: Record<string, string> = { borrador: '✏️', enviado: '📧', aceptado: '✅', rechazado: '✖️' };
+    return this.telegram.enviar(
+      chatId,
+      `📝 <b>${texto.trim() ? `Presupuestos de «${html(texto.trim())}»` : 'Últimos presupuestos'}</b>\nPulsa uno para verlo o cambiarlo.`,
+      lista.map((p) => [{ text: `${icono[p.estado] ?? ''} ${p.numero} · ${p.cliente?.nombre ?? ''} · ${corto(Number(p.total))}`, callback_data: `pv:${p.id}` }]),
+    );
+  }
+
   private catalogo() {
     return this.db.from('catalogo').select('id, nombre, descripcion, unidad, precio').eq('activo', true).order('categoria', { nullsFirst: false }).order('precio').order('nombre').then((r) => (ok(r) ?? []) as any[]);
   }
@@ -228,14 +243,14 @@ export class PresupuestosTelegramService {
     ].join('\n');
   }
 
-  /** Mientras se monta: el catálogo en botones, una partida escrita, quitar la última y terminar */
+  /** Mientras se monta o se edita: el catálogo en botones, una partida escrita, quitar una y terminar */
   private async tarjeta(id: string, nota?: string) {
     const [p, catalogo] = await Promise.all([this.cargar(id), this.catalogo()]);
     const botones: Botones = [];
     // Uno por fila: los nombres del catálogo son largos y en dos columnas Telegram los corta
     catalogo.forEach((c, i) => botones.push([{ text: `➕ ${c.nombre} · ${corto(Number(c.precio))}${SUFIJO[c.unidad] ?? ''}`, callback_data: `pa:${id}:${i}` }]));
     botones.push([{ text: '✍️ Escribir otra partida', callback_data: `pw:${id}` }]);
-    if (p.lineas?.length) botones.push([{ text: '↩️ Quitar la última', callback_data: `pq:${id}` }, { text: '✅ Listo', callback_data: `pl:${id}` }]);
+    if (p.lineas?.length) botones.push([{ text: '🗑 Quitar una partida', callback_data: `pr:${id}` }, { text: '✅ Listo', callback_data: `pl:${id}` }]);
     const texto = [this.resumen(p), '', nota ?? (catalogo.length ? 'Pulsa lo que lleva, o escribe una partida.' : 'Escribe las partidas con «✍️ Escribir otra partida».')].join('\n');
     return { p, texto, botones };
   }
@@ -337,12 +352,15 @@ export class PresupuestosTelegramService {
     if (['borrador', 'enviado'].includes(p.estado) && puede('POST', `/presupuestos/${id}/firma`)) fila.push({ text: p.estado === 'enviado' ? '📧 Volver a enviar' : '📧 Enviar al cliente', callback_data: `pe:${id}` });
     fila.push({ text: '📥 PDF', callback_data: `pp:${id}` });
     filas.push(fila);
-    if (p.estado === 'borrador' && puede('PATCH', `/presupuestos/${id}`)) filas.push([{ text: '💶 Cambiar la forma de pago', callback_data: `pg:${id}` }]);
+    if (['borrador', 'enviado'].includes(p.estado) && puede('PATCH', `/presupuestos/${id}`)) {
+      filas.push([{ text: '✏️ Editar partidas', callback_data: `pz:${id}` }, { text: '💶 Forma de pago', callback_data: `pz:${id}:pago` }]);
+    }
     if (vivo) filas.push([{ text: `📄 Ver contrato ${vivo.numero}`, callback_data: `cf:${vivo.id}` }]);
     else if (p.estado !== 'rechazado' && puede('POST', `/presupuestos/${id}/contrato`)) filas.push([{ text: '📄 Pasar a contrato', callback_data: `pc:${id}` }]);
     filas.push([this.telegram.abrir('Abrir presupuesto', `/presupuestos/${id}`)]);
     const estado: Record<string, string> = { borrador: '✏️ Borrador', enviado: '📧 Enviado, esperando al cliente', aceptado: '✅ Aceptado', rechazado: '✖️ Rechazado' };
-    return { texto: [this.resumen(p), '', `Estado: ${estado[p.estado] ?? p.estado}`, ...(nota ? [nota] : [])].join('\n'), botones: filas, p };
+    const avisoContrato = vivo && vivo.estado !== 'firmado' && ['borrador', 'enviado'].includes(p.estado) ? [`ℹ️ Si lo cambias, el contrato ${html(vivo.numero)} no se actualiza solo: rehazlo desde la app.`] : [];
+    return { texto: [this.resumen(p), '', `Estado: ${estado[p.estado] ?? p.estado}`, ...(nota ? [nota] : []), ...avisoContrato].join('\n'), botones: filas, p };
   }
 
   // ───────────────────────── Contratos ─────────────────────────
@@ -448,6 +466,55 @@ export class PresupuestosTelegramService {
         await responder();
         const p = ok(await this.db.from('presupuestos').select('numero').eq('id', id).single()) as any;
         return this.preguntar(chatId, `${PREGUNTA_PARTIDA} ${p.numero}: concepto y precio (p. ej. «Logotipo 150» o «Hosting 10 al mes»)`, 'Concepto y precio…');
+      }
+
+      case 'pv': {
+        await responder();
+        const r = await this.final(id, puede);
+        return this.telegram.enviar(chatId, r.texto, r.botones);
+      }
+
+      // Editar: en borrador directamente; si ya se envió, primero vuelve a borrador (el enlace del cliente deja de valer)
+      case 'pz':
+      case 'PZ': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        const p = await this.cargar(id);
+        if (!['borrador', 'enviado'].includes(p.estado)) return responder('Este presupuesto ya no se puede cambiar', true);
+        if ((p.firmas ?? []).some((f: any) => f.estado === 'firmado')) return responder('El cliente ya lo ha firmado: duplícalo en la app para hacer otro', true);
+        if (p.estado === 'enviado') {
+          if (accion === 'pz') {
+            await responder();
+            const r = await this.final(id, puede);
+            return editar({
+              texto: `${r.texto}\n\n⚠️ Ya se le envió al cliente. Para cambiarlo vuelve a borrador y el enlace que tiene deja de valer; luego se lo puedes volver a mandar.`,
+              botones: [[{ text: '✏️ Sí, cambiarlo', callback_data: `PZ:${id}${extra ? `:${extra}` : ''}` }, { text: 'Cancelar', callback_data: `pv:${id}` }]],
+            });
+          }
+          await this.presupuestos.cambiarEstado(id, 'borrador');
+        }
+        await responder('✏️ Editando');
+        return editar(extra === 'pago' ? await this.preguntarPago(id, puede) : await this.tarjeta(id));
+      }
+
+      case 'pr': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        await responder();
+        const p = await this.cargar(id);
+        const botones: Botones = (p.lineas ?? []).map((l: any, i: number) => [{ text: `🗑 ${nombreDe(l.concepto)} · ${corto(Number(l.importe))}${SUFIJO[l.unidad] ?? ''}`, callback_data: `px:${id}:${i}` }]);
+        botones.push([{ text: '↩️ Volver', callback_data: `pz:${id}` }]);
+        return editar({ texto: [this.resumen(p), '', '🗑 ¿Qué partida quitas?'].join('\n'), botones });
+      }
+
+      case 'px': {
+        if (!puede('PATCH', `/presupuestos/${id}`)) return sinPermiso();
+        const i = Number(extra);
+        let quitada = '';
+        await this.cambiarPartidas(id, (ls) => {
+          quitada = ls[i] ? nombreDe(ls[i].concepto) : '';
+          return ls.filter((_, j) => j !== i);
+        });
+        await responder(quitada ? `🗑 Quitada: ${quitada}` : undefined);
+        return editar(await this.tarjeta(id, quitada ? `🗑 Quitada: ${html(quitada)}` : undefined));
       }
 
       case 'pq': {

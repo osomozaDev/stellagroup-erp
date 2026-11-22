@@ -23,6 +23,7 @@ const AYUDA = [
   '/facturar · facturar el mes y mandarlo a los clientes',
   '/nuevocliente · dar de alta un cliente',
   '/presupuesto nombre · hacer un presupuesto, mandarlo, pasarlo a contrato y enviarlo a firmar',
+  '/presupuestos · los últimos presupuestos, para verlos o cambiarlos (/presupuestos nombre, los de un cliente)',
   '/resumen · lo que te deben',
   '/pendientes · facturas sin cobrar',
   '/facturas · todas las facturas, de la más nueva a la más antigua',
@@ -162,6 +163,8 @@ export class BotTelegramService {
       case '/presupuesto':
         if (!this.puede(q, 'POST', '/presupuestos')) return this.telegram.enviar(chatId, 'No tienes permiso para hacer presupuestos.');
         return argumento ? this.presupuestos.contestar(chatId, argumento, PREGUNTA_CLIENTE_PRESUPUESTO, (m, r) => this.puede(q, m, r), q) : this.presupuestos.pedirClientePresupuesto(chatId);
+      case '/presupuestos':
+        return this.presupuestos.listar(chatId, argumento, (m, r) => this.puede(q, m, r));
       case '/resumen':
         return this.telegram.enviar(chatId, await this.avisos.textoResumen(), [[this.telegram.abrir('Abrir cobros', '/cobros')]]);
       case '/pendientes':
@@ -199,6 +202,7 @@ export class BotTelegramService {
     if (this.puede(q, 'POST', '/presupuestos')) nuevo.push({ text: '📝 Nuevo presupuesto', callback_data: 'm:presupuesto' });
     if (this.puede(q, 'POST', '/clientes')) nuevo.push({ text: '👤 Nuevo cliente', callback_data: 'm:nuevocliente' });
     if (nuevo.length) filas.push(nuevo);
+    if (this.puede(q, 'GET', '/presupuestos')) filas.push([{ text: '📝 Ver y editar presupuestos', callback_data: 'm:presupuestos' }]);
     if (this.puede(q, 'POST', '/facturas/facturar-mes')) filas.push([{ text: '🧾 Facturar el mes', callback_data: 'm:facturar' }]);
     if (this.puede(q, 'GET', '/cobros')) {
       filas.push([{ text: '📊 Resumen', callback_data: 'm:resumen' }, { text: '🧾 Sin cobrar', callback_data: 'm:pendientes' }]);
@@ -474,6 +478,7 @@ export class BotTelegramService {
           if (id === 'proyecto') return this.preguntar(chatId, PREGUNTA_PROYECTO);
           if (id === 'renovaciones') return this.renovaciones(chatId, q);
           if (id === 'nuevocliente') return this.puede(q, 'POST', '/clientes') ? this.presupuestos.pedirCliente(chatId) : sinPermiso();
+          if (id === 'presupuestos') return this.presupuestos.listar(chatId, '', (m, ruta) => this.puede(q, m, ruta));
           if (id === 'presupuesto') return this.puede(q, 'POST', '/presupuestos') ? this.presupuestos.pedirClientePresupuesto(chatId) : sinPermiso();
           return;
         }
