@@ -1024,6 +1024,7 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
   empresa: 'empresa',
   usuarios: 'usuarios',
   roles: 'usuarios',
+  avisos: 'usuarios',
 };
 
 /**

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, Copy, KeyRound, Plus, Send, Share2, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { Check, Copy, KeyRound, Megaphone, Plus, Send, Share2, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { PERMISOS, PUESTOS } from '@stella/shared';
 import { api } from '../lib/api';
 import { fecha, nombreCompleto } from '../lib/formato';
 import {
-  Avatar, Boton, Campo, Cargando, Confirmar, Entrada, Etiqueta, Filtros, Interruptor, Panel, Selector, Tarjeta, cx, useAviso,
+  AreaTexto, Avatar, Boton, Campo, Cargando, Confirmar, Entrada, Etiqueta, Filtros, Interruptor, Panel, Selector, Tarjeta, cx, useAviso,
 } from '../components/ui';
 
 type Rol = { id: string; nombre: string; tipo: 'admin' | 'oficina' | 'trabajador'; permisos: string[]; sistema: boolean; usuarios: number };
@@ -45,13 +45,16 @@ export default function Usuarios() {
 function ListaUsuarios() {
   const { data: usuarios, isLoading } = useQuery({ queryKey: ['usuarios'], queryFn: () => api<Usuario[]>('/usuarios') });
   const [abierto, setAbierto] = useState<Usuario | 'nuevo' | null>(null);
+  const [aviso, setAviso] = useState(false);
   if (isLoading || !usuarios) return <Cargando />;
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Boton variante="secundario" icono={<Megaphone className="size-4" />} onClick={() => setAviso(true)}>Aviso por Telegram</Boton>
         <Boton icono={<UserPlus className="size-4" />} onClick={() => setAbierto('nuevo')}>Nuevo usuario</Boton>
       </div>
+      {aviso && <AvisoTelegram onCerrar={() => setAviso(false)} />}
       <div className="rounded-2xl border border-slate-200/70 bg-white overflow-hidden">
         <ul className="divide-y divide-slate-100">
           {usuarios.map((u) => (
@@ -78,6 +81,60 @@ function ListaUsuarios() {
       <p className="text-xs text-slate-500">* Con permisos personalizados, distintos de los de su rol.</p>
       {abierto && <FormularioUsuario usuario={abierto === 'nuevo' ? undefined : abierto} onCerrar={() => setAbierto(null)} />}
     </>
+  );
+}
+
+/** Un aviso escrito a mano que el bot manda por Telegram a quien se elija */
+function AvisoTelegram({ onCerrar }: { onCerrar: () => void }) {
+  const avisar = useAviso();
+  const { data: conectados, isLoading } = useQuery({ queryKey: ['avisos-destinatarios'], queryFn: () => api<{ usuario_id: string; nombre: string | null }[]>('/avisos/destinatarios') });
+  const [elegidos, setElegidos] = useState<string[]>([]);
+  const [texto, setTexto] = useState('');
+  const alternar = (id: string) => setElegidos((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
+  const enviar = useMutation({
+    mutationFn: () => api<{ enviados: string[]; fallidos: { nombre: string | null }[] }>('/avisos', { method: 'POST', body: { para: elegidos, texto } }),
+    onSuccess: (r) => {
+      if (r.fallidos.length) avisar(`No ha llegado a ${r.fallidos.map((f) => f.nombre ?? '?').join(', ')}`, true);
+      else avisar(`Aviso enviado a ${r.enviados.join(', ')}`);
+      if (r.enviados.length) onCerrar();
+    },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+  return (
+    <Panel
+      abierto
+      onCerrar={onCerrar}
+      titulo="Aviso por Telegram"
+      pie={<><Boton variante="secundario" onClick={onCerrar}>Cancelar</Boton><Boton icono={<Send className="size-4" />} onClick={() => enviar.mutate()} cargando={enviar.isPending} disabled={!elegidos.length || !texto.trim()}>Enviar</Boton></>}
+    >
+      <div className="space-y-5">
+        <Campo etiqueta="Para" ayuda="Solo salen quienes tienen el Telegram conectado">
+          {isLoading ? <Cargando /> : !conectados?.length ? (
+            <p className="text-sm text-slate-500">Nadie tiene el Telegram conectado todavía.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Boton variante="fantasma" onClick={() => setElegidos(elegidos.length === conectados.length ? [] : conectados.map((c) => c.usuario_id))}>
+                {elegidos.length === conectados.length ? 'Ninguno' : 'Todos'}
+              </Boton>
+              {conectados.map((c) => (
+                <button
+                  key={c.usuario_id}
+                  type="button"
+                  onClick={() => alternar(c.usuario_id)}
+                  className={cx('rounded-full border px-3 py-1.5 text-sm font-medium', elegidos.includes(c.usuario_id) ? 'border-marca-500 bg-marca-50 text-marca-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}
+                >
+                  {elegidos.includes(c.usuario_id) && <Check className="mr-1 inline size-3.5" />}
+                  {c.nombre ?? 'Sin nombre'}
+                </button>
+              ))}
+            </div>
+          )}
+        </Campo>
+        <Campo etiqueta="Aviso" ayuda="Le llega del bot de Stella como «📣 Aviso de» tu nombre">
+          <AreaTexto rows={8} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribe el aviso…" />
+        </Campo>
+      </div>
+    </Panel>
   );
 }
 

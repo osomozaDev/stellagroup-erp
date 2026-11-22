@@ -14,6 +14,7 @@ import { EmpresaController } from './modulos/empresa.controller';
 import { InicioController } from './modulos/inicio.controller';
 import { YoController } from './modulos/yo.controller';
 import { UsuariosController } from './modulos/usuarios.controller';
+import { AvisosManualesController } from './modulos/avisos-manuales.controller';
 import { GestoriaController } from './modulos/gestoria.controller';
 import { CobrosController, CobrosService, CronController } from './modulos/cobros.controller';
 import { CorreoService } from './comun/correo.service';
@@ -42,6 +43,7 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     PortalClientesController,
     YoController,
     UsuariosController,
+    AvisosManualesController,
     ClientesController,
     ProyectosController,
     FacturasController,
