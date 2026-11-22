@@ -22,7 +22,7 @@ export const PREGUNTA_PAGOS = '💶 Pagos a convenir del presupuesto';
 export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO, PREGUNTA_PAGOS];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp', 'pv', 'pz', 'PZ', 'pr', 'px']);
+const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp', 'pv', 'pz', 'PZ', 'pr', 'px', 'pk', 'PK']);
 
 const TITULO_PROVISIONAL = 'Presupuesto';
 const SUFIJO: Record<string, string> = { mes: '/mes', 'año': '/año' };
@@ -355,11 +355,15 @@ export class PresupuestosTelegramService {
     if (['borrador', 'enviado'].includes(p.estado) && puede('PATCH', `/presupuestos/${id}`)) {
       filas.push([{ text: '✏️ Editar partidas', callback_data: `pz:${id}` }, { text: '💶 Forma de pago', callback_data: `pz:${id}:pago` }]);
     }
-    if (vivo) filas.push([{ text: `📄 Ver contrato ${vivo.numero}`, callback_data: `cf:${vivo.id}` }]);
+    if (vivo) {
+      const fila = [{ text: `📄 Ver contrato ${vivo.numero}`, callback_data: `cf:${vivo.id}` }];
+      if (vivo.estado !== 'firmado' && puede('POST', `/presupuestos/${id}/contrato`)) fila.push({ text: '🔄 Rehacer contrato', callback_data: `pk:${id}` });
+      filas.push(fila);
+    }
     else if (p.estado !== 'rechazado' && puede('POST', `/presupuestos/${id}/contrato`)) filas.push([{ text: '📄 Pasar a contrato', callback_data: `pc:${id}` }]);
     filas.push([this.telegram.abrir('Abrir presupuesto', `/presupuestos/${id}`)]);
     const estado: Record<string, string> = { borrador: '✏️ Borrador', enviado: '📧 Enviado, esperando al cliente', aceptado: '✅ Aceptado', rechazado: '✖️ Rechazado' };
-    const avisoContrato = vivo && vivo.estado !== 'firmado' && ['borrador', 'enviado'].includes(p.estado) ? [`ℹ️ Si lo cambias, el contrato ${html(vivo.numero)} no se actualiza solo: rehazlo desde la app.`] : [];
+    const avisoContrato = vivo && vivo.estado !== 'firmado' && ['borrador', 'enviado'].includes(p.estado) ? [`ℹ️ Si cambias el presupuesto, pulsa «🔄 Rehacer contrato» para que ${html(vivo.numero)} lo recoja.`] : [];
     return { texto: [this.resumen(p), '', `Estado: ${estado[p.estado] ?? p.estado}`, ...(nota ? [nota] : []), ...avisoContrato].join('\n'), botones: filas, p };
   }
 
@@ -471,7 +475,7 @@ export class PresupuestosTelegramService {
       case 'pv': {
         await responder();
         const r = await this.final(id, puede);
-        return this.telegram.enviar(chatId, r.texto, r.botones);
+        return extra === 'e' ? editar(r) : this.telegram.enviar(chatId, r.texto, r.botones);
       }
 
       // Editar: en borrador directamente; si ya se envió, primero vuelve a borrador (el enlace del cliente deja de valer)
@@ -487,7 +491,7 @@ export class PresupuestosTelegramService {
             const r = await this.final(id, puede);
             return editar({
               texto: `${r.texto}\n\n⚠️ Ya se le envió al cliente. Para cambiarlo vuelve a borrador y el enlace que tiene deja de valer; luego se lo puedes volver a mandar.`,
-              botones: [[{ text: '✏️ Sí, cambiarlo', callback_data: `PZ:${id}${extra ? `:${extra}` : ''}` }, { text: 'Cancelar', callback_data: `pv:${id}` }]],
+              botones: [[{ text: '✏️ Sí, cambiarlo', callback_data: `PZ:${id}${extra ? `:${extra}` : ''}` }, { text: 'Cancelar', callback_data: `pv:${id}:e` }]],
             });
           }
           await this.presupuestos.cambiarEstado(id, 'borrador');
@@ -515,6 +519,26 @@ export class PresupuestosTelegramService {
         });
         await responder(quitada ? `🗑 Quitada: ${quitada}` : undefined);
         return editar(await this.tarjeta(id, quitada ? `🗑 Quitada: ${html(quitada)}` : undefined));
+      }
+
+      // Rehacer el contrato con el presupuesto actual: si estaba enviado a firmar, antes se confirma
+      case 'pk':
+      case 'PK': {
+        if (!puede('POST', `/presupuestos/${id}/contrato`)) return sinPermiso();
+        const r = await this.final(id, puede);
+        const vivo = (r.p.contratos ?? []).find((c: any) => c.estado !== 'anulado');
+        if (!vivo) return responder('Este presupuesto no tiene contrato', true);
+        if (accion === 'pk') {
+          await responder();
+          const enviado = vivo.estado === 'enviado' ? ' Ya se envió a firmar: el enlace que tiene el cliente deja de valer y vuelve a borrador.' : '';
+          return editar({
+            texto: `${r.texto}\n\n🔄 ¿Rehacer el contrato ${html(vivo.numero)} con el presupuesto como está ahora? Se mantienen el número y el plazo; lo cambiado a mano en el texto se pierde.${enviado}`,
+            botones: [[{ text: '🔄 Sí, rehacerlo', callback_data: `PK:${id}` }, { text: 'Cancelar', callback_data: `pv:${id}:e` }]],
+          });
+        }
+        const c = await this.presupuestos.regenerarContrato(id);
+        await responder('🔄 Contrato rehecho');
+        return editar(await this.tarjetaContrato(c.id, puede, '🔄 Contrato rehecho con el presupuesto actual.'));
       }
 
       case 'pq': {

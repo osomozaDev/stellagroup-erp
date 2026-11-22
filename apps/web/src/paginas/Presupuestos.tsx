@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, RefreshCw, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
 import { calcularTotales, EstadoPresupuesto, FORMAS_PAGO, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
 import { ElegirDelCatalogo } from './Catalogo';
 import { api, descargar } from '../lib/api';
@@ -498,6 +498,15 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
   const porDefecto = (activas.find((x) => /servicios web/i.test(x.nombre)) ?? activas.find((x) => /desarrollo/i.test(x.nombre)) ?? activas[0])?.id ?? '';
   const [plantilla, setPlantilla] = useState('');
   const [plazo, setPlazo] = useState('');
+  const [rehacer, setRehacer] = useState(false);
+  const regenerar = useMutation({
+    mutationFn: () => api<any>(`/presupuestos/${p.id}/contrato/regenerar`, { method: 'POST' }),
+    onSuccess: (c) => {
+      qc.invalidateQueries();
+      avisar(c.faltan?.length ? `Contrato ${c.numero} rehecho: faltan ${c.faltan.length} datos` : `Contrato ${c.numero} rehecho con el presupuesto actual`);
+    },
+    onError: (e: Error) => avisar(e.message, true),
+  });
 
   const crear = useMutation({
     mutationFn: (_firmar: boolean) =>
@@ -529,9 +538,20 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
             {['borrador', 'rechazado'].includes(contrato.estado) && (
               <Boton icono={<Send className="size-4" />} onClick={() => navegar(`/contratos/${contrato.id}?firmar=1`)}>Enviar a firmar</Boton>
             )}
+            {!firmado && (
+              <Boton variante="secundario" icono={<RefreshCw className="size-4" />} onClick={() => setRehacer(true)} cargando={regenerar.isPending}>Rehacer contrato</Boton>
+            )}
             <Boton variante="secundario" onClick={() => navegar(`/contratos/${contrato.id}`)}>Ver contrato</Boton>
           </div>
         </div>
+        <Confirmar
+          abierto={rehacer}
+          titulo={`¿Rehacer el contrato ${contrato.numero}?`}
+          texto={`Se vuelve a escribir con el presupuesto tal y como está ahora (partidas, precios, pagos y fecha de entrega), con el mismo número y el mismo plazo. Lo que hayas cambiado a mano en el texto se pierde.${contrato.estado === 'enviado' ? ' Como ya se envió a firmar, el enlace que tiene el cliente deja de valer y vuelve a borrador.' : ''}`}
+          botonSi="Rehacer"
+          onNo={() => setRehacer(false)}
+          onSi={() => { setRehacer(false); regenerar.mutate(); }}
+        />
       </Tarjeta>
     );
   }

@@ -173,14 +173,7 @@ export class PresupuestosController {
     }
     if (!plantillaId) throw new BadRequestException('No hay ninguna plantilla de contrato activa');
 
-    const t = await textoDeContrato(this.db, { plantillaId, clienteId: cliente.id, presupuestoId: id, proyectoId: p.proyecto_id, fecha: hoy() });
-    let cuerpo = t.cuerpo;
-    cuerpo = cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(body.plazo_dias || PLAZO_HABITUAL));
-    // «A convenir» con fechas: el plazo cuenta desde que se haya pagado la mitad del precio cerrado,
-    // así que se pone la fecha de entrega
-    const pago = ok(await this.db.from('presupuestos').select('forma_pago, forma_pago_plan, iva_pct, retencion_pct, lineas:presupuesto_lineas(unidad, importe)').eq('id', id).single()) as any;
-    cuerpo = fechaEntregaEnContrato(cuerpo, fechaMitadPagada(pago, precioCerrado(pago)));
-    if (body.precio_hora != null) cuerpo = cuerpo.replace(/\[falta precio por hora[^\]]*\]/g, new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(body.precio_hora));
+    const { t, cuerpo } = await this.textoDesdePresupuesto(id, plantillaId, cliente.id, p.proyecto_id, body.plazo_dias, body.precio_hora);
 
     const fecha = hoy();
     const numero = ok(await this.db.rpc('siguiente_numero_contrato', { p_anio: Number(fecha.slice(0, 4)) })) as string;
@@ -193,6 +186,54 @@ export class PresupuestosController {
     ) as any;
     const { cuerpo: texto, ...resto } = c;
     return { ...resto, existente: false, faltan: texto.match(/\[falta [^\]]+\]/g) ?? [] };
+  }
+
+  /** La plantilla rellenada con el presupuesto tal y como está ahora, con el plazo y el precio por hora */
+  private async textoDesdePresupuesto(id: string, plantillaId: string, clienteId: string, proyectoId: string | null, plazo?: number | null, precioHora?: number | null) {
+    const t = await textoDeContrato(this.db, { plantillaId, clienteId, presupuestoId: id, proyectoId, fecha: hoy() });
+    let cuerpo = t.cuerpo.replace(/\[falta plazo de entrega[^\]]*\]/g, String(plazo || PLAZO_HABITUAL));
+    // «A convenir» con fechas: el plazo cuenta desde que se haya pagado la mitad del precio cerrado,
+    // así que se pone la fecha de entrega
+    const pago = ok(await this.db.from('presupuestos').select('forma_pago, forma_pago_plan, iva_pct, retencion_pct, lineas:presupuesto_lineas(unidad, importe)').eq('id', id).single()) as any;
+    cuerpo = fechaEntregaEnContrato(cuerpo, fechaMitadPagada(pago, precioCerrado(pago)));
+    if (precioHora != null) cuerpo = cuerpo.replace(/\[falta precio por hora[^\]]*\]/g, new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(precioHora));
+    return { t, cuerpo };
+  }
+
+  /**
+   * Rehace el contrato (el mismo número y la misma plantilla) con el presupuesto como está ahora,
+   * después de cambiarlo. Se mantienen el plazo de entrega y el precio por hora que tenía. Si estaba
+   * enviado a firmar, esa petición se anula y vuelve a borrador. Uno firmado no se toca.
+   */
+  @Post(':id/contrato/regenerar')
+  async regenerarContrato(@Param('id') id: string) {
+    const p = ok(await this.db.from('presupuestos').select('id, estado, proyecto_id, contratos(id, numero, estado, cuerpo, plantilla_id, created_at)').eq('id', id).single()) as any;
+    const c = (p.contratos ?? []).filter((x: any) => x.estado !== 'anulado').sort((a: any, b: any) => b.created_at.localeCompare(a.created_at))[0];
+    if (!c) throw new BadRequestException('Este presupuesto no tiene contrato');
+    if (c.estado === 'firmado' || (await this.firmas.deDocumento('contrato', c.id)).some((f) => f.estado === 'firmado')) {
+      throw new BadRequestException('El contrato ya está firmado y no se puede rehacer');
+    }
+    if (!c.plantilla_id) throw new BadRequestException('Este contrato no salió de una plantilla: cámbialo a mano');
+    const numero = (re: RegExp) => {
+      const m = c.cuerpo.match(re)?.[1];
+      return m ? Number(m.replace(/\./g, '').replace(',', '.')) : null;
+    };
+    const plazo = numero(/(\d+) días (?:naturales|hábiles)/);
+    const precioHora = numero(/([\d.,]+)\s*€?\s*(?:euros\s*)?(?:\(IVA[^)]*\)\s*)?(?:por|la|\/)\s*hora/i);
+    const cliente = await clienteDePresupuesto(this.db, id);
+    const { t, cuerpo } = await this.textoDesdePresupuesto(id, c.plantilla_id, cliente.id, p.proyecto_id, plazo, precioHora);
+    // La petición de firma que hubiera ya no vale: el texto ha cambiado
+    ok(await this.db.from('firmas').update({ estado: 'anulado' }).eq('documento_tipo', 'contrato').eq('documento_id', c.id).eq('estado', 'pendiente'));
+    const nuevo = ok(
+      await this.db
+        .from('contratos')
+        .update({ cuerpo, titulo: t.titulo, cliente_id: cliente.id, proyecto_id: t.proyecto_id, estado: 'borrador' })
+        .eq('id', c.id)
+        .select('id, numero, estado, cuerpo')
+        .single(),
+    ) as any;
+    const { cuerpo: texto, ...resto } = nuevo;
+    return { ...resto, faltan: texto.match(/\[falta [^\]]+\]/g) ?? [] };
   }
 
   /** Da de alta como cliente a quien solo estaba escrito en el presupuesto */
