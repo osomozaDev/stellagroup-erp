@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, RefreshCw, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
+import { Banknote, CheckCircle2, Circle, CircleDot, Copy, Download, FileSignature, FileText, FolderKanban, Package, Pencil, Plus, RefreshCw, Send, Trash2, Undo2, UserPlus, XCircle } from 'lucide-react';
 import { calcularTotales, EstadoPresupuesto, FORMAS_PAGO, lineaDeCatalogo, TIPOS_PROYECTO, UNIDADES } from '@stella/shared';
 import { ElegirDelCatalogo } from './Catalogo';
 import { api, descargar } from '../lib/api';
@@ -220,6 +220,8 @@ function DetallePresupuesto({ id }: { id: string }) {
         )}
 
         {p.estado !== 'rechazado' && <ContratoDelPresupuesto p={p} />}
+
+        {p.estado !== 'rechazado' && <PagosDelPresupuesto p={p} />}
 
         <FirmaElectronica tipo="presupuesto" documento={p} puedeEnviar={abierto} nombrePdf={`Presupuesto ${p.numero} - ${p.cliente?.nombre ?? ''}${firmado ? ' (firmado)' : ''}.pdf`} />
 
@@ -575,6 +577,105 @@ function ContratoDelPresupuesto({ p }: { p: any }) {
           <Boton variante="secundario" icono={<FileText className="size-4" />} onClick={() => crear.mutate(false)} cargando={crear.isPending && !crear.variables} disabled={!activas.length}>Solo crear el contrato</Boton>
         </div>
       </div>
+    </Tarjeta>
+  );
+}
+
+/** Lo que el cliente ya ha pagado frente a lo previsto: marcar un pago como cobrado o apuntar otro */
+function PagosDelPresupuesto({ p }: { p: any }) {
+  const qc = useQueryClient();
+  const avisar = useAviso();
+  const estado = p.pagos ?? { pagos: [], cobrado: 0, previsto: 0, pendiente: 0, siguiente: -1 };
+  const cobros: any[] = p.cobros ?? [];
+  const [form, setForm] = useState<{ fecha: string; importe: string; concepto: string; nota: string } | null>(null);
+  const [quitar, setQuitar] = useState<any>(null);
+  const apuntar = useMutation({
+    mutationFn: (body: any) => api(`/presupuestos/${p.id}/pagos`, { method: 'POST', body }),
+    onSuccess: (_r, body: any) => { qc.invalidateQueries(); setForm(null); avisar(`Cobro de ${euros(Number(body.importe))} apuntado`); },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+  const borrar = useMutation({
+    mutationFn: (pagoId: string) => api(`/presupuestos/${p.id}/pagos/${pagoId}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries(); avisar('Cobro quitado'); },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+  const abrir = (x?: any) => setForm({ fecha: hoyISO(), importe: x ? String(x.pendiente) : '', concepto: x?.concepto ?? '', nota: '' });
+  const icono = { cobrado: <CheckCircle2 className="size-5 text-emerald-600" />, parcial: <CircleDot className="size-5 text-amber-500" />, pendiente: <Circle className="size-5 text-slate-300" /> };
+
+  return (
+    <Tarjeta titulo="Pagos">
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-emerald-50 p-2"><p className="text-xs text-emerald-700">Cobrado</p><p className="font-semibold text-emerald-900">{euros(estado.cobrado)}</p></div>
+          <div className="rounded-xl bg-amber-50 p-2"><p className="text-xs text-amber-700">Pendiente</p><p className="font-semibold text-amber-900">{euros(estado.pendiente)}</p></div>
+          <div className="rounded-xl bg-slate-50 p-2"><p className="text-xs text-slate-500">Previsto</p><p className="font-semibold">{euros(estado.previsto)}</p></div>
+        </div>
+
+        {estado.pagos.length ? (
+          <ul className="divide-y divide-slate-100">
+            {estado.pagos.map((x: any, i: number) => (
+              <li key={i} className="flex items-center gap-3 py-2">
+                {icono[x.estado as 'cobrado']}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{x.concepto}</p>
+                  <p className="text-sm text-slate-500">
+                    {euros(x.importe)}{x.fecha ? ` · ${fecha(x.fecha)}` : ''}
+                    {x.estado === 'parcial' && ` · cobrado ${euros(x.cobrado)}, faltan ${euros(x.pendiente)}`}
+                    {x.estado === 'pendiente' && x.fecha && x.fecha < hoyISO() && <span className="text-rose-600"> · vencido</span>}
+                  </p>
+                </div>
+                {x.estado !== 'cobrado' && (
+                  <Boton variante={i === estado.siguiente ? 'principal' : 'secundario'} icono={<Banknote className="size-4" />} onClick={() => abrir(x)}>Marcar cobrado</Boton>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">Este presupuesto no tiene pagos previstos. Apunta lo que vaya pagando el cliente.</p>
+        )}
+
+        {cobros.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-slate-600 mb-1">Cobros apuntados</p>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {cobros.map((c) => (
+                <li key={c.id} className="flex items-center gap-2 py-1.5">
+                  <span className="w-24 shrink-0 text-slate-500">{fechaCorta(c.fecha)}</span>
+                  <span className="flex-1 min-w-0 truncate">{c.concepto || 'Pago'}{c.nota ? ` · ${c.nota}` : ''}</span>
+                  <span className="font-medium">{euros(Number(c.importe))}</span>
+                  <Boton variante="fantasma" icono={<Trash2 className="size-4" />} aria-label="Quitar cobro" onClick={() => setQuitar(c)} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {form ? (
+          <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+            <div className="grid sm:grid-cols-3 gap-3">
+              <Campo etiqueta="Fecha del cobro"><Entrada type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} /></Campo>
+              <Campo etiqueta="Importe (€)"><Entrada type="number" inputMode="decimal" min={0} step="0.01" value={form.importe} onChange={(e) => setForm({ ...form, importe: e.target.value })} /></Campo>
+              <Campo etiqueta="Concepto"><Entrada value={form.concepto} onChange={(e) => setForm({ ...form, concepto: e.target.value })} placeholder="Señal" /></Campo>
+              <Campo etiqueta="Nota" className="sm:col-span-3"><Entrada value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} placeholder="Transferencia, Bizum, efectivo…" /></Campo>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Boton icono={<CheckCircle2 className="size-4" />} onClick={() => apuntar.mutate(form)} cargando={apuntar.isPending}>Apuntar cobro</Boton>
+              <Boton variante="secundario" onClick={() => setForm(null)}>Cancelar</Boton>
+            </div>
+          </div>
+        ) : (
+          <Boton variante="secundario" icono={<Plus className="size-4" />} onClick={() => abrir()}>Apuntar otro cobro</Boton>
+        )}
+      </div>
+      <Confirmar
+        abierto={!!quitar}
+        titulo="¿Quitar este cobro?"
+        texto={quitar ? `${euros(Number(quitar.importe))} del ${fecha(quitar.fecha)}. Hazlo solo si lo apuntaste por error.` : ''}
+        botonSi="Quitar"
+        peligro
+        onNo={() => setQuitar(null)}
+        onSi={() => { borrar.mutate(quitar.id); setQuitar(null); }}
+      />
     </Tarjeta>
   );
 }

@@ -3,7 +3,7 @@ import { Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   AceptarPresupuestoInput, aceptarPresupuestoSchema, calcularTotales, clienteDeTexto, EnviarFirmaInput, enviarFirmaSchema, ESTADOS_PRESUPUESTO, EstadoPresupuesto, PresupuestoInput,
-  fechaEntregaEnContrato, fechaMitadPagada, precioCerrado, presupuestoSchema, redondear,
+  estadoDePagos, fechaEntregaEnContrato, fechaMitadPagada, PagoPresupuestoInput, pagoPresupuestoSchema, pagosPrevistos, precioCerrado, presupuestoSchema, redondear,
 } from '@stella/shared';
 import { SUPABASE } from '../comun/supabase.module';
 import { ZodPipe } from '../comun/zod.pipe';
@@ -58,16 +58,30 @@ export class PresupuestosController {
     const p = ok(
       await this.db
         .from('presupuestos')
-        .select('*, cliente:clientes(*), proyecto:proyectos(id, nombre), lineas:presupuesto_lineas(*), contratos(id, numero, titulo, estado, firmado_en, created_at)')
+        .select('*, cliente:clientes(*), proyecto:proyectos(id, nombre), lineas:presupuesto_lineas(*), contratos(id, numero, titulo, estado, firmado_en, created_at), cobros:presupuesto_pagos(*)')
         .eq('id', id)
         .order('orden', { referencedTable: 'presupuesto_lineas' })
+        .order('fecha', { referencedTable: 'presupuesto_pagos' })
         .single(),
     ) as any;
     const [empresa, firmas] = await Promise.all([
       this.db.from('empresa').select('*').eq('id', 1).single().then((r) => ok(r)),
       this.firmas.deDocumento('presupuesto', id),
     ]);
-    return { ...conCliente(p), empresa, firmas, tipo_documento: 'presupuesto' };
+    return { ...conCliente(p), empresa, firmas, tipo_documento: 'presupuesto', pagos: estadoDePagos(pagosPrevistos(p), p.cobros ?? []) };
+  }
+
+  /** Apunta un pago que ya ha hecho el cliente (la señal, el 50 %…) */
+  @Post(':id/pagos')
+  async apuntarPago(@Param('id') id: string, @Body(new ZodPipe(pagoPresupuestoSchema)) body: PagoPresupuestoInput, @Req() req?: any) {
+    const p = ok(await this.db.from('presupuestos').select('id, estado').eq('id', id).single()) as any;
+    if (p.estado === 'rechazado') throw new BadRequestException('Este presupuesto está rechazado');
+    return ok(await this.db.from('presupuesto_pagos').insert({ ...body, presupuesto_id: id, registrado_por: req?.user?.id ?? null }).select().single());
+  }
+
+  @Delete(':id/pagos/:pagoId')
+  async borrarPago(@Param('id') id: string, @Param('pagoId') pagoId: string) {
+    return ok(await this.db.from('presupuesto_pagos').delete().eq('id', pagoId).eq('presupuesto_id', id).select('id').single());
   }
 
   @Get(':id/pdf')

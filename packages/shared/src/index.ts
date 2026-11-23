@@ -382,6 +382,61 @@ export function fechaMitadPagada(p: ConPlan, precio: number) {
   return null;
 }
 
+export interface PagoPrevisto {
+  concepto: string;
+  fecha: string | null;
+  importe: number;
+}
+
+/**
+ * Los pagos que se esperan del precio cerrado, en orden: el plan «a convenir» o, según la forma
+ * de pago, el 100 %, 50 % y 50 % o tres tercios. Las cuotas (mes, año) se cobran aparte.
+ */
+export function pagosPrevistos(p: ConPlan & Parameters<typeof precioCerrado>[0]): PagoPrevisto[] {
+  if (p.forma_pago === 'convenir' || p.forma_pago === 'personalizada') {
+    return (p.forma_pago_plan ?? [])
+      .filter((x) => Number(x.importe) > 0)
+      .sort((a, b) => (a.fecha ?? '9999').localeCompare(b.fecha ?? '9999'))
+      .map((x, i) => ({ concepto: x.concepto?.trim() || `Pago ${i + 1}`, fecha: x.fecha || null, importe: Number(x.importe) }));
+  }
+  const precio = precioCerrado(p);
+  if (!(precio > 0)) return [];
+  const partes = (n: number) => {
+    const una = Math.floor((precio / n) * 100) / 100;
+    return Array.from({ length: n }, (_, i) => (i === n - 1 ? redondear(precio - una * (n - 1)) : una));
+  };
+  if (p.forma_pago === 'dos') return partes(2).map((importe, i) => ({ concepto: ['50 % al aceptar', '50 % a la entrega'][i], fecha: null, importe }));
+  if (p.forma_pago === 'tres') return partes(3).map((importe, i) => ({ concepto: ['1.er pago, al aceptar', '2.º pago, al aprobar el diseño', '3.er pago, a la entrega'][i], fecha: null, importe }));
+  return [{ concepto: 'Pago único', fecha: null, importe: precio }];
+}
+
+export type EstadoPagoPrevisto = PagoPrevisto & { cobrado: number; pendiente: number; estado: 'cobrado' | 'parcial' | 'pendiente' };
+
+/**
+ * Reparte lo cobrado entre los pagos previstos por orden (lo primero que se cobra cubre el
+ * primer pago, y así), y dice cuánto se ha cobrado en total y cuánto falta.
+ */
+export function estadoDePagos(previstos: PagoPrevisto[], cobros: { importe: number | string }[]) {
+  const cobrado = redondear(cobros.reduce((t, c) => t + Number(c.importe), 0));
+  let queda = cobrado;
+  const pagos: EstadoPagoPrevisto[] = previstos.map((x) => {
+    const aqui = redondear(Math.min(queda, x.importe));
+    queda = redondear(queda - aqui);
+    const pendiente = redondear(x.importe - aqui);
+    return { ...x, cobrado: aqui, pendiente, estado: pendiente <= 0.005 ? 'cobrado' : aqui > 0 ? 'parcial' : 'pendiente' };
+  });
+  const previsto = redondear(previstos.reduce((t, x) => t + x.importe, 0));
+  return { pagos, cobrado, previsto, pendiente: redondear(Math.max(previsto - cobrado, 0)), siguiente: pagos.findIndex((x) => x.estado !== 'cobrado') };
+}
+
+export const pagoPresupuestoSchema = z.object({
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pon la fecha del pago'),
+  importe: z.coerce.number().positive('Pon cuánto ha pagado').max(10_000_000),
+  concepto: z.string().trim().max(120).optional().nullable().transform((v) => v || null),
+  nota: z.string().trim().max(500).optional().nullable().transform((v) => v || null),
+});
+export type PagoPresupuestoInput = z.infer<typeof pagoPresupuestoSchema>;
+
 /** Desde cuándo cuenta el plazo de entrega en las plantillas (la frase antigua y la de ahora) */
 const DESDE_PAGO = /(\d+)\s+días\s+(naturales|hábiles),\s+contados desde (?:la recepción del primer pago|que el Cliente haya abonado al menos el 50 % del precio cerrado)(?!\s*\(previsto)/;
 

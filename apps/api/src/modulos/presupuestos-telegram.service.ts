@@ -6,7 +6,7 @@ import { busqueda, ok } from '../comun/db';
 import { fichaDeTexto } from '../comun/alta-cliente';
 import { completarUnDato, destinoDato, marcadoresDe } from '../comun/datos-contrato';
 import { Botones, html, TelegramService } from '../comun/telegram.service';
-import { euros, hoyMadrid } from './avisos-telegram.service';
+import { euros, fechaCorta, hoyMadrid } from './avisos-telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
 import { FirmasService } from './firmas.service';
 import { OportunidadesController } from './crm.controller';
@@ -22,7 +22,7 @@ export const PREGUNTA_PAGOS = '💶 Pagos a convenir del presupuesto';
 export const PREGUNTAS = [PREGUNTA_NUEVO_CLIENTE, PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_PARTIDA, PREGUNTA_CONTRATO, PREGUNTA_DATO, PREGUNTA_PAGOS];
 
 /** Botones de este servicio (callback_data «accion:id[:extra]») */
-const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp', 'pv', 'pz', 'PZ', 'pr', 'px', 'pk', 'PK']);
+const ACCIONES = new Set(['np', 'no', 'pt', 'pa', 'pw', 'pq', 'pl', 'pg', 'pf', 'pm', 'pe', 'PE', 'pp', 'pc', 'cf', 'cd', 'ce', 'CE', 'cp', 'pv', 'pz', 'PZ', 'pr', 'px', 'pk', 'PK', 'kp', 'kc', 'kd', 'KD']);
 
 const TITULO_PROVISIONAL = 'Presupuesto';
 const SUFIJO: Record<string, string> = { mes: '/mes', 'año': '/año' };
@@ -361,10 +361,44 @@ export class PresupuestosTelegramService {
       filas.push(fila);
     }
     else if (p.estado !== 'rechazado' && puede('POST', `/presupuestos/${id}/contrato`)) filas.push([{ text: '📄 Pasar a contrato', callback_data: `pc:${id}` }]);
+    if (p.estado !== 'rechazado' && puede('POST', `/presupuestos/${id}/pagos`)) {
+      const e = p.pagos;
+      filas.push([{ text: e?.cobrado > 0 ? `💶 Pagos · cobrado ${corto(e.cobrado)} de ${corto(e.previsto)}` : '💶 Pagos', callback_data: `kp:${id}` }]);
+    }
     filas.push([this.telegram.abrir('Abrir presupuesto', `/presupuestos/${id}`)]);
     const estado: Record<string, string> = { borrador: '✏️ Borrador', enviado: '📧 Enviado, esperando al cliente', aceptado: '✅ Aceptado', rechazado: '✖️ Rechazado' };
     const avisoContrato = vivo && vivo.estado !== 'firmado' && ['borrador', 'enviado'].includes(p.estado) ? [`ℹ️ Si cambias el presupuesto, pulsa «🔄 Rehacer contrato» para que ${html(vivo.numero)} lo recoja.`] : [];
     return { texto: [this.resumen(p), '', `Estado: ${estado[p.estado] ?? p.estado}`, ...(nota ? [nota] : []), ...avisoContrato].join('\n'), botones: filas, p };
+  }
+
+  /** Lo previsto y lo cobrado, con un botón por cada pago que falta para marcarlo como cobrado hoy */
+  private async vistaPagos(id: string, nota?: string) {
+    const p = await this.cargar(id);
+    const e = p.pagos;
+    const marca = { cobrado: '✅', parcial: '🟡', pendiente: '⚪️' } as Record<string, string>;
+    const lineas = e.pagos.map((x: any) => {
+      const detalle = x.estado === 'parcial' ? ` · cobrado ${euros(x.cobrado)}, faltan ${euros(x.pendiente)}` : '';
+      const vencido = x.estado !== 'cobrado' && x.fecha && x.fecha < hoyMadrid() ? ' · ⚠️ vencido' : '';
+      return `${marca[x.estado]} ${html(x.concepto)} · ${euros(x.importe)}${x.fecha ? ` · ${fechaCorta(x.fecha)}` : ''}${detalle}${vencido}`;
+    });
+    const cobros = (p.cobros ?? []).map((c: any) => `   • ${fechaCorta(c.fecha)} · ${euros(Number(c.importe))}${c.concepto ? ` · ${html(c.concepto)}` : ''}`);
+    const texto = [
+      `💶 <b>Pagos del presupuesto ${html(p.numero)}</b> · ${html(p.cliente?.nombre ?? '')}`,
+      '',
+      ...(lineas.length ? lineas : ['No tiene pagos previstos.']),
+      '',
+      `Cobrado: <b>${euros(e.cobrado)}</b> · Pendiente: <b>${euros(e.pendiente)}</b>`,
+      ...(cobros.length ? ['', 'Cobros apuntados:', ...cobros] : []),
+      ...(nota ? ['', nota] : []),
+      ...(e.pagos.some((x: any) => x.estado !== 'cobrado') ? ['', 'Pulsa el pago que te han hecho: se apunta con fecha de hoy. Para otra fecha o cantidad, ábrelo en la app.'] : []),
+    ].join('\n');
+    const botones: Botones = e.pagos
+      .map((x: any, i: number) => ({ x, i }))
+      .filter(({ x }: any) => x.estado !== 'cobrado')
+      .map(({ x, i }: any) => [{ text: `✅ Cobrado: ${x.concepto} · ${corto(x.pendiente)}`, callback_data: `kc:${id}:${i}` }]);
+    if (cobros.length) botones.push([{ text: '↩️ Quitar el último cobro', callback_data: `kd:${id}` }]);
+    botones.push([this.telegram.abrir('Abrir en la app', `/presupuestos/${id}`), { text: '⬅️ Volver', callback_data: `pv:${id}:e` }]);
+    return { texto, botones, p };
   }
 
   // ───────────────────────── Contratos ─────────────────────────
@@ -539,6 +573,41 @@ export class PresupuestosTelegramService {
         const c = await this.presupuestos.regenerarContrato(id);
         await responder('🔄 Contrato rehecho');
         return editar(await this.tarjetaContrato(c.id, puede, '🔄 Contrato rehecho con el presupuesto actual.'));
+      }
+
+      case 'kp': {
+        if (!puede('POST', `/presupuestos/${id}/pagos`)) return sinPermiso();
+        await responder();
+        return editar(await this.vistaPagos(id));
+      }
+
+      // Marca como cobrado hoy lo que falta del pago i
+      case 'kc': {
+        if (!puede('POST', `/presupuestos/${id}/pagos`)) return sinPermiso();
+        const p = await this.cargar(id);
+        const x = p.pagos?.pagos?.[Number(extra)];
+        if (!x || x.estado === 'cobrado') return responder('Ese pago ya está cobrado', true);
+        await this.presupuestos.apuntarPago(id, { fecha: hoyMadrid(), importe: x.pendiente, concepto: x.concepto, nota: 'Apuntado desde Telegram' }, { user: { id: u.usuario_id } });
+        await responder(`✅ ${euros(x.pendiente)} cobrados`);
+        return editar(await this.vistaPagos(id, `✅ Apuntado: ${html(x.concepto)} · ${euros(x.pendiente)}`));
+      }
+
+      case 'kd':
+      case 'KD': {
+        if (!puede('DELETE', `/presupuestos/${id}/pagos/x`)) return sinPermiso();
+        const r = await this.vistaPagos(id);
+        const ultimo = [...(r.p.cobros ?? [])].sort((a: any, b: any) => a.created_at.localeCompare(b.created_at)).at(-1);
+        if (!ultimo) return responder('No hay cobros apuntados', true);
+        if (accion === 'kd') {
+          await responder();
+          return editar({
+            texto: `${r.texto}\n\n↩️ ¿Quitar el cobro de ${euros(Number(ultimo.importe))} del ${fechaCorta(ultimo.fecha)}${ultimo.concepto ? ` (${html(ultimo.concepto)})` : ''}? Solo si se apuntó por error.`,
+            botones: [[{ text: '↩️ Sí, quitarlo', callback_data: `KD:${id}` }, { text: 'Cancelar', callback_data: `kp:${id}` }]],
+          });
+        }
+        await this.presupuestos.borrarPago(id, ultimo.id);
+        await responder('↩️ Cobro quitado');
+        return editar(await this.vistaPagos(id, '↩️ Cobro quitado.'));
       }
 
       case 'pq': {
