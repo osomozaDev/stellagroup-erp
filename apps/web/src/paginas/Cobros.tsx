@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, BellRing, CheckCircle2, History, Mail, Send } from 'lucide-react';
+import { AlertTriangle, Banknote, BellRing, CheckCircle2, FileText, History, Mail, Send } from 'lucide-react';
 import { asuntoFactura, cambiarFirma, EnviarComo as Como, firmaCorreo, firmaUsuario, mensajeFactura } from '@stella/shared';
 import EnviarComo from '../components/EnviarComo';
 import { api, aBase64 } from '../lib/api';
-import { euros, fecha, nombreMes } from '../lib/formato';
+import { euros, fecha, fechaCorta, hoyISO, nombreMes } from '../lib/formato';
 import {
   AreaTexto, Boton, Campo, Cargando, Entrada, Etiqueta, Interruptor, Panel, Selector, Tarjeta, Vacio, cx, useAviso,
 } from '../components/ui';
@@ -21,6 +21,7 @@ export default function Cobros() {
   const { data: r, isLoading } = useQuery({ queryKey: ['cobros'], queryFn: () => api('/cobros') });
   const [recordar, setRecordar] = useState<any>(null);
   const [enviar, setEnviar] = useState<any>(null);
+  const [cobrar, setCobrar] = useState<any>(null);
 
   const cobrada = useMutation({
     mutationFn: (id: string) => api(`/facturas/${id}/estado`, { method: 'PATCH', body: { estado: 'cobrada' } }),
@@ -102,6 +103,8 @@ export default function Cobros() {
           )}
         </Tarjeta>
 
+        <PagosPresupuestos presupuestos={r.presupuestos ?? []} cobros={r.cobros_presupuestos ?? []} onCobrar={setCobrar} />
+
         <HistorialEnvios />
 
         <AjustesRecordatorios ajustes={r.ajustes} />
@@ -109,7 +112,91 @@ export default function Cobros() {
 
       {recordar && <PanelRecordatorio factura={recordar} onCerrar={() => setRecordar(null)} />}
       {enviar && <PanelEnviarFactura facturaId={enviar.id} onCerrar={() => setEnviar(null)} />}
+      {cobrar && <PanelCobroPresupuesto p={cobrar} onCerrar={() => setCobrar(null)} />}
     </div>
+  );
+}
+
+/** Presupuestos en marcha con pagos pendientes (el siguiente, si ha vencido) y los últimos cobros apuntados */
+function PagosPresupuestos({ presupuestos, cobros, onCobrar }: { presupuestos: any[]; cobros: any[]; onCobrar: (p: any) => void }) {
+  const pendiente = presupuestos.reduce((t, p) => t + Number(p.pendiente), 0);
+  return (
+    <>
+      <Tarjeta titulo={`Pagos de presupuestos (${presupuestos.length})${presupuestos.length ? ` · faltan ${euros(pendiente)}` : ''}`}>
+        {presupuestos.length === 0 ? <p className="text-sm text-slate-500">Ningún presupuesto en marcha tiene pagos pendientes.</p> : (
+          <ul className="-my-3 divide-y divide-slate-100">
+            {presupuestos.map((p) => (
+              <li key={p.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <Link to={`/presupuestos/${p.id}`} className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{p.cliente}</p>
+                  <p className="truncate text-sm text-slate-500">Presupuesto {p.numero} · cobrado {euros(p.cobrado)} de {euros(p.previsto)}</p>
+                  {p.siguiente && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <Etiqueta color={p.vencido ? 'rojo' : 'naranja'}>
+                        {p.siguiente.concepto} · {euros(p.siguiente.pendiente)}
+                        {p.siguiente.fecha ? (p.vencido ? ` · venció el ${fecha(p.siguiente.fecha)}` : ` · el ${fecha(p.siguiente.fecha)}`) : ''}
+                      </Etiqueta>
+                    </div>
+                  )}
+                </Link>
+                {p.siguiente && (
+                  <div className="flex gap-2 shrink-0">
+                    <Boton variante="secundario" icono={<Banknote className="size-4 text-emerald-600" />} onClick={() => onCobrar(p)}>Marcar cobrado</Boton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Tarjeta>
+
+      {cobros.length > 0 && (
+        <Tarjeta titulo="Últimos cobros de presupuestos">
+          <ul className="-my-2 divide-y divide-slate-100 text-sm">
+            {cobros.map((c) => (
+              <li key={c.id} className="py-2 flex items-center gap-3">
+                <span className="w-20 shrink-0 text-slate-500">{fechaCorta(c.fecha)}</span>
+                <Link to={`/presupuestos/${c.presupuesto?.id}`} className="flex-1 min-w-0 truncate hover:underline">
+                  <FileText className="inline size-3.5 mr-1 text-slate-400" />
+                  {c.presupuesto?.cliente} · {c.presupuesto?.numero}{c.concepto ? ` · ${c.concepto}` : ''}{c.nota ? ` · ${c.nota}` : ''}
+                </Link>
+                <span className="font-semibold text-emerald-700">{euros(Number(c.importe))}</span>
+              </li>
+            ))}
+          </ul>
+        </Tarjeta>
+      )}
+    </>
+  );
+}
+
+/** Apunta el cobro del siguiente pago de un presupuesto (o lo que se cambie) */
+function PanelCobroPresupuesto({ p, onCerrar }: { p: any; onCerrar: () => void }) {
+  const qc = useQueryClient();
+  const avisar = useAviso();
+  const [v, setV] = useState({ fecha: hoyISO(), importe: String(p.siguiente?.pendiente ?? ''), concepto: p.siguiente?.concepto ?? '', nota: '' });
+  const apuntar = useMutation({
+    mutationFn: () => api(`/presupuestos/${p.id}/pagos`, { method: 'POST', body: v }),
+    onSuccess: () => { qc.invalidateQueries(); avisar(`Cobro de ${euros(Number(v.importe))} apuntado en ${p.numero}`); onCerrar(); },
+    onError: (e: Error) => avisar(e.message, true),
+  });
+  return (
+    <Panel
+      abierto
+      onCerrar={onCerrar}
+      titulo={`Cobro de ${p.numero} · ${p.cliente}`}
+      pie={<><Boton variante="secundario" onClick={onCerrar}>Cancelar</Boton><Boton icono={<CheckCircle2 className="size-4" />} onClick={() => apuntar.mutate()} cargando={apuntar.isPending}>Apuntar cobro</Boton></>}
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">Cobrado hasta ahora {euros(p.cobrado)} de {euros(p.previsto)}. Si ha pagado otra cantidad, cámbiala: lo que entre cubre los pagos por orden.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Campo etiqueta="Fecha del cobro"><Entrada type="date" value={v.fecha} onChange={(e) => setV({ ...v, fecha: e.target.value })} /></Campo>
+          <Campo etiqueta="Importe (€)"><Entrada type="number" inputMode="decimal" min={0} step="0.01" value={v.importe} onChange={(e) => setV({ ...v, importe: e.target.value })} /></Campo>
+          <Campo etiqueta="Concepto"><Entrada value={v.concepto} onChange={(e) => setV({ ...v, concepto: e.target.value })} /></Campo>
+          <Campo etiqueta="Nota"><Entrada value={v.nota} onChange={(e) => setV({ ...v, nota: e.target.value })} placeholder="Transferencia, Bizum…" /></Campo>
+        </div>
+      </div>
+    </Panel>
   );
 }
 

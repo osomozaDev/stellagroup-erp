@@ -9,7 +9,7 @@ import { ZodPipe } from '../comun/zod.pipe';
 import { ok } from '../comun/db';
 import { CorreoService } from '../comun/correo.service';
 import { Remitente, remitenteDe } from '../comun/remitente';
-import { enviarComoSchema } from '@stella/shared';
+import { clienteDeTexto, enviarComoSchema, estadoDePagos, pagosPrevistos } from '@stella/shared';
 import { asuntoRecordatorio } from '../comun/plantilla-correo';
 import { Publico } from '../comun/publico.decorator';
 import { AvisosTelegramService } from './avisos-telegram.service';
@@ -158,7 +158,41 @@ export class CobrosController {
       };
     });
 
-    return { facturas, ajustes, correo_configurado: this.correo.configurado };
+    return { facturas, ajustes, correo_configurado: this.correo.configurado, ...(await this.pagosDePresupuestos()) };
+  }
+
+  /**
+   * Pagos de los presupuestos: los que van en marcha (aceptados, con contrato o con algún cobro)
+   * y lo que falta de cada uno, más los últimos cobros apuntados.
+   */
+  private async pagosDePresupuestos() {
+    const [lista, ultimos] = await Promise.all([
+      this.db
+        .from('presupuestos')
+        .select('id, numero, titulo, estado, forma_pago, forma_pago_plan, iva_pct, retencion_pct, cliente_texto, cliente:clientes(id, nombre), lineas:presupuesto_lineas(unidad, importe), cobros:presupuesto_pagos(importe), contratos(estado)')
+        .neq('estado', 'rechazado'),
+      this.db
+        .from('presupuesto_pagos')
+        .select('id, fecha, importe, concepto, nota, presupuesto:presupuestos(id, numero, cliente_texto, cliente:clientes(id, nombre))')
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(20),
+    ]);
+    const nombre = (p: any) => p?.cliente?.nombre ?? clienteDeTexto(p?.cliente_texto)?.nombre ?? '';
+    const presupuestos = (ok(lista) as any[])
+      .map((p) => {
+        const e = estadoDePagos(pagosPrevistos(p), p.cobros ?? []);
+        const enMarcha = p.estado === 'aceptado' || e.cobrado > 0 || (p.contratos ?? []).some((c: any) => c.estado !== 'anulado');
+        const siguiente = e.siguiente >= 0 ? e.pagos[e.siguiente] : null;
+        return enMarcha && e.pendiente > 0
+          ? { id: p.id, numero: p.numero, titulo: p.titulo, cliente: nombre(p), cobrado: e.cobrado, previsto: e.previsto, pendiente: e.pendiente, siguiente,
+              vencido: !!siguiente?.fecha && siguiente.fecha < hoy() }
+          : null;
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => (a.siguiente?.fecha ?? '9999').localeCompare(b.siguiente?.fecha ?? '9999'));
+    const cobros_presupuestos = (ok(ultimos) as any[]).map(({ presupuesto, ...c }) => ({ ...c, presupuesto: presupuesto && { id: presupuesto.id, numero: presupuesto.numero, cliente: nombre(presupuesto) } }));
+    return { presupuestos, cobros_presupuestos };
   }
 
   /** Texto del recordatorio ya relleno, para que la persona lo revise antes de enviarlo */
