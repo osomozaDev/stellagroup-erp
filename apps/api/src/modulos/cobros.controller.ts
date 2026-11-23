@@ -161,6 +161,12 @@ export class CobrosController {
     return { facturas, ajustes, correo_configurado: this.correo.configurado, ...(await this.pagosDePresupuestos()) };
   }
 
+  /** Solo los pagos de presupuestos (para Inicio) */
+  @Get('presupuestos')
+  presupuestos() {
+    return this.pagosDePresupuestos();
+  }
+
   /**
    * Pagos de los presupuestos: los que van en marcha (aceptados, con contrato o con algún cobro)
    * y lo que falta de cada uno, más los últimos cobros apuntados.

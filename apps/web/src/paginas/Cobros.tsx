@@ -170,6 +170,19 @@ function PagosPresupuestos({ presupuestos, cobros, onCobrar }: { presupuestos: a
   );
 }
 
+/** Para Inicio: los pagos de presupuestos pendientes, con su panel para marcarlos cobrados. No sale si no hay nada. */
+export function PagosPresupuestosInicio() {
+  const [cobrar, setCobrar] = useState<any>(null);
+  const { data } = useQuery({ queryKey: ['cobros', 'presupuestos'], queryFn: () => api<any>('/cobros/presupuestos') });
+  if (!data?.presupuestos?.length) return null;
+  return (
+    <>
+      <PagosPresupuestos presupuestos={data.presupuestos} cobros={(data.cobros_presupuestos ?? []).slice(0, 5)} onCobrar={setCobrar} />
+      {cobrar && <PanelCobroPresupuesto p={cobrar} onCerrar={() => setCobrar(null)} />}
+    </>
+  );
+}
+
 /** Apunta el cobro del siguiente pago de un presupuesto (o lo que se cambie) */
 function PanelCobroPresupuesto({ p, onCerrar }: { p: any; onCerrar: () => void }) {
   const qc = useQueryClient();

@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { euros, fecha, MESES, nombreMes } from '../lib/formato';
 import { Boton, Cargando, Etiqueta, Tarjeta, cx } from '../components/ui';
 import { usePuede } from '../lib/permisos';
-import { AvisoRebotes } from './Cobros';
+import { AvisoRebotes, PagosPresupuestosInicio } from './Cobros';
 
 export default function Inicio() {
   const navegar = useNavigate();
@@ -39,6 +39,8 @@ export default function Inicio() {
             {puede('facturas') && <Facturacion r={r} />}
           </>
         )}
+
+        {puede('cobros') && <PagosPresupuestosInicio />}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Cifra icono={<Wallet />} texto="Por cobrar" valor={euros(r.por_cobrar)} a="/facturas?estado=emitida" />
