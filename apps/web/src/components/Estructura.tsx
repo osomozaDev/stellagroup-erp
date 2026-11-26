@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Briefcase, CalendarDays, CalendarPlus, Trophy, ExternalLink, FilePlus2, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
+  Briefcase, CalendarDays, CalendarPlus, Trophy, ExternalLink, FilePlus2, FileSignature, FileText, ScrollText, FolderKanban, Package, HandCoins, Receipt, Home, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRound, Users, Wallet, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -23,6 +23,7 @@ const menu = [
   { a: '/catalogo', texto: 'Catálogo', icono: Package },
   { a: '/servicios', texto: 'Servicios', icono: RefreshCw },
   { a: '/cobros', texto: 'Cobros', icono: HandCoins },
+  { a: '/gastos', texto: 'Gastos', icono: Receipt },
   { a: '/empleados', texto: 'Equipo', icono: UserRound },
   { a: '/nominas', texto: 'Nóminas', icono: Wallet },
   { a: '/gestoria', texto: 'Gestoría', icono: Briefcase },

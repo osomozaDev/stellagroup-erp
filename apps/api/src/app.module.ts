@@ -10,6 +10,7 @@ import { FacturasController } from './modulos/facturas.controller';
 import { FacturasService } from './modulos/facturas.service';
 import { EmpleadosController } from './modulos/empleados.controller';
 import { NominasController } from './modulos/nominas.controller';
+import { GastosController } from './modulos/gastos.controller';
 import { EmpresaController } from './modulos/empresa.controller';
 import { InicioController } from './modulos/inicio.controller';
 import { YoController } from './modulos/yo.controller';
@@ -49,6 +50,7 @@ import { FacturarTelegramService } from './modulos/facturar-telegram.service';
     FacturasController,
     EmpleadosController,
     NominasController,
+    GastosController,
     EmpresaController,
     InicioController,
     GestoriaController,

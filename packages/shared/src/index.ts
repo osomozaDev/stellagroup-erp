@@ -1049,6 +1049,7 @@ export const PERMISOS = [
   { clave: 'empleados', nombre: 'Equipo', descripcion: 'Fichas y sueldos del equipo' },
   { clave: 'nominas', nombre: 'Nóminas', descripcion: 'Preparar y marcar nóminas como pagadas' },
   { clave: 'cobros', nombre: 'Cobros', descripcion: 'Seguimiento de cobros y recordatorios' },
+  { clave: 'gastos', nombre: 'Gastos', descripcion: 'Gastos de material, suscripciones y horas, y su reparto entre clientes' },
   { clave: 'gestoria', nombre: 'Gestoría', descripcion: 'Informes para la gestoría' },
   { clave: 'empresa', nombre: 'Mi empresa', descripcion: 'Datos fiscales, logo y numeración' },
 ] as const;
@@ -1074,6 +1075,7 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
   empleados: 'empleados',
   nominas: 'nominas',
   cobros: 'cobros',
+  gastos: 'gastos',
   telegram: 'cobros',
   gestoria: 'gestoria',
   empresa: 'empresa',
@@ -1087,7 +1089,7 @@ const PERMISO_DE_PREFIJO: Record<string, Permiso | 'usuarios'> = {
  * una factura hay que elegir cliente y proyecto). Solo lectura (GET).
  */
 const LECTURA_TAMBIEN: Partial<Record<Permiso, Permiso[]>> = {
-  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros', 'contratos', 'crm', 'agenda'],
+  clientes: ['facturas', 'proyectos', 'presupuestos', 'servicios', 'cobros', 'contratos', 'crm', 'agenda', 'gastos'],
   proyectos: ['facturas', 'clientes', 'empleados', 'presupuestos', 'servicios', 'contratos', 'crm', 'agenda'],
   empleados: ['proyectos', 'crm', 'agenda'],
   crm: ['agenda', 'presupuestos'],
@@ -1169,4 +1171,57 @@ export function asuntoFactura(f: any) {
   const doc = f.rectifica_id ? `Factura rectificativa ${f.numero}` : f.numero ? `Factura ${f.numero}` : 'Prefactura';
   const extra = f.numero && f.vencimiento ? `vence el ${fechaCorreo(f.vencimiento)}` : f.proyecto?.nombre;
   return [doc, eurosCorreo(Number(f.total)), extra].filter(Boolean).join(' · ');
+}
+
+// ───────────── Gastos y su reparto entre clientes ─────────────
+
+export const CATEGORIAS_GASTO = [
+  { valor: 'material', texto: 'Material' },
+  { valor: 'suscripcion', texto: 'Suscripción' },
+  { valor: 'horas', texto: 'Horas de trabajo' },
+  { valor: 'otro', texto: 'Otro' },
+] as const;
+export type CategoriaGasto = (typeof CATEGORIAS_GASTO)[number]['valor'];
+export const nombreCategoriaGasto = (c: string) => CATEGORIAS_GASTO.find((x) => x.valor === c)?.texto ?? c;
+
+const vacioANull = (v: unknown) => (typeof v === 'string' && !v.trim() ? null : v);
+
+export const gastoSchema = z
+  .object({
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pon la fecha'),
+    concepto: z.string().trim().min(1, 'Escribe el concepto').max(160),
+    categoria: z.enum(['material', 'suscripcion', 'horas', 'otro']).default('material'),
+    proveedor: z.preprocess(vacioANull, z.string().trim().max(120).nullable()).default(null),
+    importe: z.coerce.number().positive('El importe tiene que ser mayor que cero').max(9_999_999),
+    nota: z.preprocess(vacioANull, z.string().trim().max(500).nullable()).default(null),
+    /** Vacío: gasto general, sin cliente. Si hay clientes, los porcentajes suman 100. */
+    reparto: z
+      .array(z.object({ cliente_id: z.string().uuid('Elige el cliente'), porcentaje: z.coerce.number().positive('Pon un porcentaje mayor que cero').max(100) }))
+      .max(100)
+      .default([]),
+  })
+  .superRefine((g, ctx) => {
+    const ids = g.reparto.map((r) => r.cliente_id);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: 'custom', path: ['reparto'], message: 'Hay un cliente repetido en el reparto' });
+    const suma = g.reparto.reduce((t, r) => t + r.porcentaje, 0);
+    if (g.reparto.length && Math.abs(suma - 100) > 0.01)
+      ctx.addIssue({ code: 'custom', path: ['reparto'], message: `Los porcentajes suman ${Math.round(suma * 100) / 100} % y tienen que sumar 100 %` });
+  });
+export type GastoInput = z.infer<typeof gastoSchema>;
+
+/** Reparte el 100 % a partes iguales entre n clientes (el último ajusta el redondeo) */
+export function aPartesIguales(n: number): number[] {
+  if (n <= 0) return [];
+  const parte = Math.floor((100 / n) * 100) / 100;
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? Math.round((100 - parte * (n - 1)) * 100) / 100 : parte));
+}
+
+/** Lo que le toca a cada cliente de un gasto, en euros (el último ajusta el redondeo) */
+export function importesReparto(importe: number, reparto: { cliente_id: string; porcentaje: number }[]) {
+  let resto = Math.round(importe * 100);
+  return reparto.map((r, i) => {
+    const centimos = i === reparto.length - 1 ? resto : Math.round((importe * 100 * Number(r.porcentaje)) / 100);
+    resto -= centimos;
+    return { ...r, importe: centimos / 100 };
+  });
 }

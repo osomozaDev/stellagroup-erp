@@ -11,6 +11,8 @@ import {
 } from '../components/ui';
 import { estadoFactura } from './Facturas';
 import { FormularioProyecto, estadoProyecto } from './Proyectos';
+import { GastosDelCliente } from './Gastos';
+import { usePuede } from '../lib/permisos';
 
 export default function Clientes() {
   const { id } = useParams();
@@ -132,6 +134,7 @@ function PortalCliente({ id }: { id: string }) {
 
 function DetalleCliente({ id }: { id: string }) {
   const navegar = useNavigate();
+  const puede = usePuede();
   const qc = useQueryClient();
   const avisar = useAviso();
   const [editar, setEditar] = useState(false);
@@ -242,6 +245,8 @@ function DetalleCliente({ id }: { id: string }) {
             </ul>
           </Tarjeta>
         )}
+
+        {puede('gastos') && <GastosDelCliente id={c.id} />}
 
         <Tarjeta titulo="Facturas">
           {facturas.length === 0 ? <p className="text-sm text-slate-500">Sin facturas todavía.</p> : (

@@ -12,6 +12,7 @@ import { ConPermiso, ProveedorPermisos, Yo } from './lib/permisos';
 import Estructura from './components/Estructura';
 import Entrar from './paginas/Entrar';
 import Inicio from './paginas/Inicio';
+import Gastos from './paginas/Gastos';
 import Facturas from './paginas/Facturas';
 import FacturarMes from './paginas/FacturarMes';
 import Clientes from './paginas/Clientes';
@@ -113,6 +114,7 @@ function AppOficina() {
         <Route path="catalogo" element={<ConPermiso permiso="presupuestos"><Catalogo /></ConPermiso>} />
         <Route path="servicios/:id?" element={<ConPermiso permiso="servicios"><Servicios /></ConPermiso>} />
         <Route path="cobros" element={<ConPermiso permiso="cobros"><Cobros /></ConPermiso>} />
+        <Route path="gastos" element={<ConPermiso permiso="gastos"><Gastos /></ConPermiso>} />
         <Route path="gestoria" element={<ConPermiso permiso="gestoria"><Gestoria /></ConPermiso>} />
         <Route path="ajustes" element={<ConPermiso permiso="empresa"><Ajustes /></ConPermiso>} />
         <Route path="usuarios" element={<ConPermiso permiso="usuarios"><Usuarios /></ConPermiso>} />
