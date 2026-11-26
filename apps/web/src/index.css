@@ -28,6 +28,10 @@ input, select, textarea { font-size: 16px; }
 
 .pb-seguro { padding-bottom: env(safe-area-inset-bottom); }
 
+/* En iOS los campos de fecha y hora tienen un ancho mínimo propio y se salían por la derecha */
+input[type="date"], input[type="time"], input[type="datetime-local"] { -webkit-appearance: none; appearance: none; min-width: 0; }
+input::-webkit-date-and-time-value { text-align: left; }
+
 @media print {
   body { background: #fff; }
   body * { visibility: hidden; }

@@ -1,5 +1,6 @@
 import { Children, cloneElement, createContext, Fragment, isValidElement, ReactElement, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { CheckCircle2, Search, X, AlertCircle, ArrowLeft, MoreHorizontal } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { iniciales } from '../lib/formato';
 
@@ -123,7 +124,8 @@ export function Panel({
     };
   }, [abierto, onCerrar]);
   if (!abierto) return null;
-  return (
+  // En el body: dentro de <main> (que es isolate) la barra inferior del móvil quedaba encima y tapaba el pie
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end no-imprimir">
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]" onClick={onCerrar} />
       <div className={cx('relative flex h-full w-full flex-col bg-white shadow-2xl md:rounded-l-2xl', ancho)}>
@@ -136,13 +138,14 @@ export function Panel({
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">{children}</div>
         {pie && <div className="flex gap-2 justify-end border-t border-slate-100 px-4 md:px-6 py-3 pb-seguro bg-white">{pie}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 export function Confirmar({ abierto, titulo, texto, onSi, onNo, botonSi = 'Sí, continuar', peligro }: { abierto: boolean; titulo: string; texto: string; onSi: () => void; onNo: () => void; botonSi?: string; peligro?: boolean }) {
   if (!abierto) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/30" onClick={onNo} />
       <div className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
@@ -153,7 +156,8 @@ export function Confirmar({ abierto, titulo, texto, onSi, onNo, botonSi = 'Sí, 
           <Boton variante={peligro ? 'peligro' : 'principal'} onClick={onSi}>{botonSi}</Boton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
