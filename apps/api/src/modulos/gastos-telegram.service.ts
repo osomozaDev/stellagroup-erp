@@ -62,11 +62,15 @@ export function gastoDeTexto(texto: string): { concepto: string; importe: number
  */
 @Injectable()
 export class GastosTelegramService {
+  private readonly gastos: GastosController;
+
   constructor(
     @Inject(SUPABASE) private readonly db: SupabaseClient,
     private readonly telegram: TelegramService,
-    private readonly gastos: GastosController,
-  ) {}
+  ) {
+    // Los controladores no se inyectan en servicios: se crea uno con la misma base de datos
+    this.gastos = new GastosController(db);
+  }
 
   esSuya(accion: string) {
     return ACCIONES.has(accion);
