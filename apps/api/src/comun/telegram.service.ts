@@ -173,6 +173,8 @@ export class TelegramService implements OnModuleInit {
         { command: 'presupuestos', description: 'Ver y editar los últimos presupuestos' },
         { command: 'nuevocliente', description: 'Dar de alta un cliente' },
         { command: 'facturar', description: 'Facturar el mes y mandarlo a los clientes' },
+        { command: 'gastos', description: 'Gastos del mes y lo que toca a cada cliente' },
+        { command: 'gasto', description: 'Apuntar un gasto: /gasto plásticos QR 120' },
         { command: 'resumen', description: 'Lo que te deben y lo vencido' },
         { command: 'pendientes', description: 'Facturas sin cobrar' },
         { command: 'facturas', description: 'Todas las facturas' },

@@ -11,6 +11,7 @@ import { CobrosService } from './cobros.controller';
 import { FacturarTelegramService, PREGUNTA_HORAS } from './facturar-telegram.service';
 import { EnvioFacturaService } from './envio-factura.service';
 import { CrmTelegramService, PREGUNTA_CITA, PREGUNTA_NUEVA, PREGUNTAS_DEMO } from './crm-telegram.service';
+import { GastosTelegramService, PREGUNTAS_GASTO } from './gastos-telegram.service';
 import { PREGUNTA_CLIENTE_PRESUPUESTO, PREGUNTA_NUEVO_CLIENTE, PREGUNTAS, PresupuestosTelegramService } from './presupuestos-telegram.service';
 
 const AYUDA = [
@@ -24,6 +25,8 @@ const AYUDA = [
   '/nuevocliente · dar de alta un cliente',
   '/presupuesto nombre · hacer un presupuesto, mandarlo, pasarlo a contrato y enviarlo a firmar',
   '/presupuestos · los últimos presupuestos, para verlos o cambiarlos (/presupuestos nombre, los de un cliente)',
+  '/gastos · gastos del mes y lo que toca a cada cliente',
+  '/gasto plásticos QR 120 · apuntar un gasto y repartirlo entre clientes',
   '/resumen · lo que te deben',
   '/pendientes · facturas sin cobrar',
   '/facturas · todas las facturas, de la más nueva a la más antigua',
@@ -70,6 +73,7 @@ export class BotTelegramService {
     private readonly envio: EnvioFacturaService,
     private readonly presupuestos: PresupuestosTelegramService,
     private readonly crm: CrmTelegramService,
+    private readonly gastos: GastosTelegramService,
   ) {}
 
   /** Usuario conectado a este chat, con sus permisos (null si el chat no está conectado o ya no tiene acceso) */
@@ -119,6 +123,12 @@ export class BotTelegramService {
       if (!q) return;
       return this.presupuestos.contestar(chatId, texto, respondeA, (m, r) => this.puede(q, m, r), q);
     }
+    // Respuestas al gasto nuevo y al cliente que se busca para un gasto
+    if (!texto.startsWith('/') && respondeA && PREGUNTAS_GASTO.some((p) => respondeA.includes(p))) {
+      const q = await this.quien(chatId);
+      if (!q) return;
+      return this.gastos.contestar(chatId, texto, respondeA, (m, r) => this.puede(q, m, r), q.usuario_id);
+    }
     // Respuesta a «Escribe el nombre…»: se trata como la orden de buscar. Cualquier otro texto suelto enseña el menú
     if (!texto.startsWith('/')) {
       const orden = respondeA === PREGUNTA_CLIENTE ? '/cliente' : respondeA === PREGUNTA_PROYECTO ? '/proyecto' : '/menu';
@@ -165,6 +175,11 @@ export class BotTelegramService {
         return argumento ? this.presupuestos.contestar(chatId, argumento, PREGUNTA_CLIENTE_PRESUPUESTO, (m, r) => this.puede(q, m, r), q) : this.presupuestos.pedirClientePresupuesto(chatId);
       case '/presupuestos':
         return this.presupuestos.listar(chatId, argumento, (m, r) => this.puede(q, m, r));
+      case '/gastos':
+        return this.gastos.resumen(chatId, (m, r) => this.puede(q, m, r));
+      case '/gasto':
+        if (!this.puede(q, 'POST', '/gastos')) return this.telegram.enviar(chatId, 'No tienes permiso para apuntar gastos.');
+        return argumento ? this.gastos.crear(chatId, argumento, (m, r) => this.puede(q, m, r), q.usuario_id) : this.gastos.pedirGasto(chatId);
       case '/resumen':
         return this.telegram.enviar(chatId, await this.avisos.textoResumen(), [[this.telegram.abrir('Abrir cobros', '/cobros')]]);
       case '/pendientes':
@@ -209,6 +224,11 @@ export class BotTelegramService {
       filas.push([{ text: '📅 Última semana', callback_data: 'm:semana' }]);
     }
     if (this.puede(q, 'GET', '/facturas')) filas.push([{ text: '📄 Todas las facturas', callback_data: 'lf:0' }]);
+    if (this.puede(q, 'GET', '/gastos')) {
+      const gastos = [{ text: '🧾 Gastos', callback_data: 'gm:mes' }];
+      if (this.puede(q, 'POST', '/gastos')) gastos.push({ text: '➕ Apuntar gasto', callback_data: 'gn:1' });
+      filas.push(gastos);
+    }
     const buscar = [];
     if (this.puede(q, 'GET', '/clientes')) buscar.push({ text: '🔍 Cliente', callback_data: 'm:cliente' });
     if (this.puede(q, 'GET', '/proyectos')) buscar.push({ text: '🔍 Proyecto', callback_data: 'm:proyecto' });
@@ -283,6 +303,10 @@ export class BotTelegramService {
           lineas.push(`${vencida ? '🔴' : '⚪️'} ${this.enlace(`/facturas/${f.id}`, doc(f))}: ${euros(Number(f.total))}${f.vencimiento ? ` · ${vencida ? 'venció' : 'vence'} el ${fechaCorta(f.vencimiento)}` : ''}`);
         }
       }
+    }
+    if (this.puede(q, 'GET', '/gastos')) {
+      const gastos = await this.gastos.lineaCliente(id);
+      if (gastos) lineas.push('', gastos);
     }
     return this.telegram.enviar(chatId, lineas.join('\n'), this.presupuestos.botonesCliente(id, (m, r) => this.puede(q, m, r)));
   }
@@ -458,6 +482,9 @@ export class BotTelegramService {
       }
       if (this.crm.esSuya(accion)) {
         return await this.crm.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
+      }
+      if (this.gastos.esSuya(accion)) {
+        return await this.gastos.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
       }
       if (this.presupuestos.esSuya(accion)) {
         return await this.presupuestos.boton(accion, id, extra, chatId, mensajeId, (m, ruta) => this.puede(q, m, ruta), q, (t, alerta) => this.telegram.responderBoton(cb.id, t, alerta));
